@@ -28,6 +28,8 @@ final class DopamineCandidateDecoration {
     private let selection = CAGradientLayer()
     private let sheen = CAGradientLayer()
     private var selectionVisible = false
+    private var lastScrollOffset: CGFloat = 0
+    private weak var tableView: NSTableView?
 
     private var isEnabled: Bool {
         Config.DopamineEffects().value
@@ -36,6 +38,7 @@ final class DopamineCandidateDecoration {
     func install(in container: NSView, tableView: NSTableView) {
         container.wantsLayer = true
         tableView.wantsLayer = true
+        self.tableView = tableView
 
         // 枠は回転する円錐グラデーションを細い角丸の線で切り抜いて作る
         self.borderGradient.type = .conic
@@ -98,15 +101,18 @@ final class DopamineCandidateDecoration {
         self.applyEnabledState()
     }
 
-    func moveSelection(to rowRect: CGRect?) {
+    func moveSelection(toRow row: Int?) {
         self.applyEnabledState()
-        guard self.isEnabled, let rowRect, !rowRect.isEmpty else {
+        guard self.isEnabled, let row, let target = self.layerRect(ofRow: row) else {
             self.selection.opacity = 0
             self.selectionVisible = false
             return
         }
-        let target = rowRect.insetBy(dx: 5, dy: 2)
-        let previous = self.selection.presentation()?.frame ?? self.selection.frame
+        // 選択に合わせて一覧がスクロールした分だけ開始位置をずらし、見た目の位置から動かす
+        let scrollOffset = self.tableView?.enclosingScrollView?.contentView.bounds.minY ?? 0
+        var previous = self.selection.presentation()?.frame ?? self.selection.frame
+        previous.origin.y += scrollOffset - self.lastScrollOffset
+        self.lastScrollOffset = scrollOffset
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -118,7 +124,12 @@ final class DopamineCandidateDecoration {
         self.selection.opacity = 1
         CATransaction.commit()
 
-        if self.selectionVisible, previous != target {
+        if !self.selectionVisible {
+            let pop = CAKeyframeAnimation(keyPath: "transform.scale")
+            pop.values = [0.85, 1.04, 1]
+            pop.duration = 0.25
+            self.selection.add(pop, forKey: "pop")
+        } else if previous != target {
             let move = CASpringAnimation(keyPath: "position")
             move.fromValue = NSValue(point: CGPoint(x: previous.midX, y: previous.midY))
             move.toValue = NSValue(point: CGPoint(x: target.midX, y: target.midY))
@@ -134,11 +145,6 @@ final class DopamineCandidateDecoration {
             size.stiffness = 420
             size.duration = size.settlingDuration
             self.selection.add(size, forKey: "size")
-        } else {
-            let pop = CAKeyframeAnimation(keyPath: "transform.scale")
-            pop.values = [0.85, 1.04, 1]
-            pop.duration = 0.25
-            self.selection.add(pop, forKey: "pop")
         }
 
         let sweep = CABasicAnimation(keyPath: "position.x")
@@ -152,6 +158,14 @@ final class DopamineCandidateDecoration {
         self.sheen.add(sweep, forKey: "sweep")
         self.sheen.add(sheenOpacity, forKey: "sheenOpacity")
         self.selectionVisible = true
+    }
+
+    /// clip view 側で座標系が反転済みのため、行の矩形はそのまま layer 座標として使える
+    private func layerRect(ofRow row: Int) -> CGRect? {
+        guard let tableView = self.tableView, row >= 0, row < tableView.numberOfRows else {
+            return nil
+        }
+        return tableView.rect(ofRow: row).insetBy(dx: 5, dy: 2)
     }
 
     /// ウィンドウが表示されたときに下から浮き上がらせる

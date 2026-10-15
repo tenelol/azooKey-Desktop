@@ -203,7 +203,7 @@ class BaseCandidateViewController: NSViewController {
 
     internal func updateSelection(to row: Int, notifySelectionChange: Bool = true) {
         if row == -1 {
-            self.decoration.moveSelection(to: nil)
+            self.decoration.moveSelection(toRow: nil)
             return
         }
         self.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
@@ -211,7 +211,7 @@ class BaseCandidateViewController: NSViewController {
         self.updateSelectionCallback(row, notifySelectionChange: notifySelectionChange)
         self.currentSelectedRow = row
         self.updateVisibleRows()
-        self.decoration.moveSelection(to: self.tableView.rect(ofRow: row))
+        self.decoration.moveSelection(toRow: row)
     }
 
     internal func updateSelectionCallback(_ row: Int, notifySelectionChange: Bool) {}
