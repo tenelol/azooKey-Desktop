@@ -62,6 +62,12 @@ extension Config {
         static let `default` = false
         public static let key: String = "dev.ensan.inputmethod.azooKeyMac.preference.optionDirectFullWidthInput"
     }
+    /// 打鍵・確定時にコンボ演出を表示する設定
+    public struct DopamineEffects: BoolConfigItem {
+        public init() {}
+        static let `default` = true
+        public static let key: String = "dev.ensan.inputmethod.azooKeyMac.preference.dopamineEffects"
+    }
     /// AI変換時にコンテキストを含めるかどうか
     public struct IncludeContextInAITransform: BoolConfigItem {
         public init() {}

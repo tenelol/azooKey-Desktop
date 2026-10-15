@@ -389,6 +389,9 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                     self.appendDebugMessage("Consumed delayed fallthrough event \(request.eventID)")
                 }
                 self.apply(response)
+                if Self.isDopamineKeystroke(event), let point = self.dopamineAnchorPoint() {
+                    DopamineEffectOverlay.shared.registerKeystroke(at: point)
+                }
             }
         }
         return true
@@ -423,6 +426,44 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         self.refreshCandidateWindow()
         self.refreshPredictionWindow()
         self.refreshReplaceSuggestionWindow()
+
+        let committedText = response.effects.reduce(into: "") { text, effect in
+            if case .insertText(let inserted) = effect {
+                text += inserted
+            }
+        }
+        if !committedText.isEmpty, let point = self.dopamineAnchorPoint() {
+            DopamineEffectOverlay.shared.registerCommit(committedText, at: point)
+        }
+    }
+
+    /// 文字を打った打鍵だけをコンボに数える（Enter・Backspace・矢印キー・ショートカットは除く）
+    private static func isDopamineKeystroke(_ event: KeyEventCore) -> Bool {
+        guard event.modifierFlags.isDisjoint(with: [.command, .control]),
+              let scalar = event.characters?.unicodeScalars.first else {
+            return false
+        }
+        // 0xF700...0xF8FF は矢印キーなどのファンクションキー
+        return scalar.value >= 0x20 && scalar.value != 0x7F && !(0xF700...0xF8FF).contains(scalar.value)
+    }
+
+    /// 演出の基準位置（スクリーン座標）。キャレット位置を取れないクライアントではマウス位置を使う
+    @MainActor
+    private func dopamineAnchorPoint() -> CGPoint? {
+        guard Config.DopamineEffects().value, let client = self.client() else {
+            return nil
+        }
+        let selection = self.currentMarkedText().selectionRange.location
+        // 末尾のキャレット位置を返さないクライアントがあるため先頭位置にも退避する
+        let indices = selection > 0 && selection != NSNotFound ? [selection, 0] : [0]
+        for index in indices {
+            var rect: NSRect = .zero
+            client.attributes(forCharacterIndex: index, lineHeightRectangle: &rect)
+            if rect != .zero {
+                return CGPoint(x: rect.minX, y: rect.midY)
+            }
+        }
+        return NSEvent.mouseLocation
     }
 
     @MainActor
