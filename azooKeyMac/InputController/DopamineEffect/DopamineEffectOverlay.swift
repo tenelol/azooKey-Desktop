@@ -24,6 +24,8 @@ final class DopamineEffectOverlay {
     }
 
     private static let comboTimeout: TimeInterval = 3.0
+    /// 最も長い演出（粒子の寿命）が終わるまで待ってからウィンドウを隠す
+    private static let idleHideDelay: TimeInterval = 5.0
     private static let keywordBufferLength = 32
 
     private static let keywordEffects: [KeywordEffect] = [
@@ -78,6 +80,7 @@ final class DopamineEffectOverlay {
     private var comboTimerLayer: CALayer?
     private var combo = 0
     private var resetWorkItem: DispatchWorkItem?
+    private var hideWorkItem: DispatchWorkItem?
     private var recentCommittedText = ""
     private var imageCache: [String: CGImage] = [:]
 
@@ -136,6 +139,7 @@ final class DopamineEffectOverlay {
             CATransaction.commit()
         }
         window.orderFrontRegardless()
+        self.scheduleHide()
         guard let root = self.rootLayer else {
             return nil
         }
@@ -257,6 +261,19 @@ final class DopamineEffectOverlay {
         drain.fillMode = .forwards
         drain.isRemovedOnCompletion = false
         timer.add(drain, forKey: "drain")
+    }
+
+    /// 透明でも全画面ウィンドウが前面に残ると他のツールやウィンドウマネージャから見えるため、
+    /// 演出がない間は画面から外す
+    private func scheduleHide() {
+        self.hideWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.window?.orderOut(nil)
+            }
+        }
+        self.hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.idleHideDelay, execute: workItem)
     }
 
     private func scheduleComboReset() {
