@@ -32,7 +32,7 @@ final class DopamineEffectOverlay {
         .init(
             keywords: ["リリース", "release", "ship", "デプロイ", "deploy", "完成", "マージ", "merge", "公開"],
             title: "SHIPPED!",
-            colors: [.hex(0xB45CFF), .hex(0x5CF2FF), .hex(0x5CFF8F)],
+            colors: [.dopamineHex(0xB45CFF), .dopamineHex(0x5CF2FF), .dopamineHex(0x5CFF8F)],
             emoji: ["🚀", "✨"],
             tint: nil,
             rockets: true
@@ -40,37 +40,37 @@ final class DopamineEffectOverlay {
         .init(
             keywords: ["好き", "すき", "愛", "love", "かわいい", "可愛い"],
             title: "LOVE",
-            colors: [.hex(0xFF4D6D), .hex(0xFF9ECF), .hex(0xFFD1E8)],
+            colors: [.dopamineHex(0xFF4D6D), .dopamineHex(0xFF9ECF), .dopamineHex(0xFFD1E8)],
             emoji: ["💖", "💕", "😍"],
-            tint: .hex(0xFF2D6F)
+            tint: .dopamineHex(0xFF2D6F)
         ),
         .init(
             keywords: ["最強", "天才", "完璧", "最高", "critical"],
             title: "CRITICAL!!",
-            colors: [.hex(0xFFE45C), .hex(0xFF9F1C), .hex(0xFF4D6D)],
+            colors: [.dopamineHex(0xFFE45C), .dopamineHex(0xFF9F1C), .dopamineHex(0xFF4D6D)],
             emoji: ["💎", "✨", "⭐️"],
-            tint: .hex(0xFFB020)
+            tint: .dopamineHex(0xFFB020)
         ),
         .init(
             keywords: ["ドーパミン", "ドパ", "やばい", "ヤバい", "すごい", "凄い"],
             title: "MEGA HIT",
-            colors: [.hex(0x5CF2FF), .hex(0x8F7BFF), .hex(0xFF5CF2)],
+            colors: [.dopamineHex(0x5CF2FF), .dopamineHex(0x8F7BFF), .dopamineHex(0xFF5CF2)],
             emoji: ["⚡️", "🔥", "💥"],
-            tint: .hex(0x7B5CFF)
+            tint: .dopamineHex(0x7B5CFF)
         ),
         .init(
             keywords: ["ありがとう", "感謝", "thanks", "thank you"],
             title: "THANKS!!",
-            colors: [.hex(0x5CFF8F), .hex(0xFFE45C)],
+            colors: [.dopamineHex(0x5CFF8F), .dopamineHex(0xFFE45C)],
             emoji: ["🙏", "🌸", "🎉"],
             tint: nil
         ),
         .init(
             keywords: ["バグ", "bug", "エラー", "error"],
             title: "BUG?!",
-            colors: [.hex(0xA3FF5C), .hex(0x2EC27E)],
+            colors: [.dopamineHex(0xA3FF5C), .dopamineHex(0x2EC27E)],
             emoji: ["🐛", "💥", "🪲"],
-            tint: .hex(0x2EC27E)
+            tint: .dopamineHex(0x2EC27E)
         )
     ]
 
@@ -103,7 +103,7 @@ final class DopamineEffectOverlay {
         self.showComboLabel(rank: rank, near: local, in: root)
         self.emitSparks(at: local, colors: rank.colors, intensity: min(1 + CGFloat(self.combo) / 25, 3), in: root)
         if self.combo % 10 == 0 {
-            self.showMilestone(rank: rank, near: local, in: root)
+            self.showMilestone(rank: rank, in: root)
         }
         self.scheduleComboReset()
     }
@@ -120,7 +120,7 @@ final class DopamineEffectOverlay {
             self.recentCommittedText = ""
             self.playKeywordEffect(effect, near: local, in: root)
         } else if text.count >= 2 {
-            self.showFloatingText("NICE!", colors: [.hex(0x5CF2FF), .hex(0xFFFFFF)], at: local, in: root)
+            self.showFloatingText("NICE!", colors: [.dopamineHex(0x5CF2FF), .dopamineHex(0xFFFFFF)], at: local, in: root)
         }
     }
 
@@ -185,13 +185,13 @@ final class DopamineEffectOverlay {
     private static func rank(for combo: Int) -> Rank {
         switch combo {
         case ..<10:
-            Rank(letter: "C", colors: [.hex(0x5CF2FF), .hex(0x3B82F6)])
+            Rank(letter: "C", colors: [.dopamineHex(0x5CF2FF), .dopamineHex(0x3B82F6)])
         case ..<20:
-            Rank(letter: "B", colors: [.hex(0xFFE45C), .hex(0xFF9F1C)])
+            Rank(letter: "B", colors: [.dopamineHex(0xFFE45C), .dopamineHex(0xFF9F1C)])
         case ..<30:
-            Rank(letter: "A", colors: [.hex(0xFFB020), .hex(0xFF4D6D)])
+            Rank(letter: "A", colors: [.dopamineHex(0xFFB020), .dopamineHex(0xFF4D6D)])
         default:
-            Rank(letter: "S", colors: [.hex(0xFF4D6D), .hex(0xFFE45C), .hex(0x5CFF8F), .hex(0x5CF2FF), .hex(0xB45CFF)])
+            Rank(letter: "S", colors: [.dopamineHex(0xFF4D6D), .dopamineHex(0xFFE45C), .dopamineHex(0x5CFF8F), .dopamineHex(0x5CF2FF), .dopamineHex(0xB45CFF)])
         }
     }
 
@@ -299,19 +299,20 @@ final class DopamineEffectOverlay {
         }
     }
 
-    private func showMilestone(rank: Rank, near point: CGPoint, in root: CALayer) {
+    private func showMilestone(rank: Rank, in root: CALayer) {
         let title = switch self.combo {
         case 100...: "GODLIKE x\(self.combo)"
         case 50...: "UNSTOPPABLE x\(self.combo)"
         case 30...: "ON FIRE x\(self.combo)"
         default: "COMBO x\(self.combo)"
         }
-        let colors: [NSColor] = [.hex(0x5CFF8F), .hex(0xFFE45C), .hex(0xFF9F1C), .hex(0xFF4D6D)]
+        let colors: [NSColor] = [.dopamineHex(0x5CFF8F), .dopamineHex(0xFFE45C), .dopamineHex(0xFF9F1C), .dopamineHex(0xFF4D6D)]
+        // 入力中の文字を隠さないよう、節目の見出しは画面右上に出す
+        let center = CGPoint(x: root.bounds.maxX - 280, y: root.bounds.maxY - 120)
         // 後から追加したレイヤーほど手前に描かれるため、見出しは最後に重ねる
-        self.emitConfetti(at: point, colors: colors + rank.colors, in: root)
-        self.shockwave(at: point, color: rank.colors[0], in: root)
+        self.emitConfetti(at: center, colors: colors + rank.colors, in: root)
         self.flashEdges(color: rank.colors[rank.colors.count / 2], in: root)
-        self.showBanner(title, colors: colors, fontSize: 64, center: CGPoint(x: point.x + 120, y: point.y - 70), in: root)
+        self.showBanner(title, colors: colors, fontSize: 52, center: center, in: root)
     }
 
     // MARK: - Keyword effects
@@ -409,8 +410,8 @@ final class DopamineEffectOverlay {
         }
         let cells = colors.flatMap { color in
             [
-                self.makeCell(image: confetti, color: color, birthRate: 220, velocity: 520, lifetime: 2.2, scale: 0.6, yAcceleration: -520, spin: 6),
-                self.makeCell(image: star, color: color, birthRate: 60, velocity: 380, lifetime: 1.6, scale: 0.5, yAcceleration: -300, spin: 3)
+                self.makeCell(image: confetti, color: color, birthRate: 120, velocity: 520, lifetime: 2.2, scale: 0.6, yAcceleration: -520, spin: 6),
+                self.makeCell(image: star, color: color, birthRate: 40, velocity: 380, lifetime: 1.6, scale: 0.5, yAcceleration: -300, spin: 3)
             ]
         }
         self.burst(cells: cells, at: point, renderMode: .unordered, emitDuration: 0.12, in: root)
@@ -514,7 +515,7 @@ final class DopamineEffectOverlay {
         let border = CALayer()
         border.frame = root.bounds
         border.borderColor = color.cgColor
-        border.borderWidth = 10
+        border.borderWidth = 6
         border.shadowColor = color.cgColor
         border.shadowOffset = .zero
         border.shadowRadius = 24
@@ -523,9 +524,9 @@ final class DopamineEffectOverlay {
         root.addSublayer(border)
 
         let opacity = CAKeyframeAnimation(keyPath: "opacity")
-        opacity.values = [0, 1, 0.6, 0]
+        opacity.values = [0, 0.7, 0.35, 0]
         opacity.keyTimes = [0, 0.1, 0.4, 1]
-        opacity.duration = 0.9
+        opacity.duration = 0.8
         self.run(opacity, on: border, removeAfter: true)
     }
 
@@ -554,7 +555,7 @@ final class DopamineEffectOverlay {
             layer.contents = rocket
             layer.contentsScale = self.backingScale
             layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
-            layer.shadowColor = NSColor.hex(0xFF9F1C).cgColor
+            layer.shadowColor = NSColor.dopamineHex(0xFF9F1C).cgColor
             layer.shadowOffset = .zero
             layer.shadowRadius = 10
             layer.shadowOpacity = 0.9
@@ -766,16 +767,5 @@ final class DopamineEffectOverlay {
             }
         }
         return path
-    }
-}
-
-private extension NSColor {
-    static func hex(_ value: UInt32) -> NSColor {
-        NSColor(
-            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
     }
 }

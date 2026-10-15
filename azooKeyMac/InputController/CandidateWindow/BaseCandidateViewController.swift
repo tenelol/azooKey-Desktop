@@ -93,6 +93,7 @@ class BaseCandidateViewController: NSViewController {
     internal var candidates: [ConverterCandidatePresentation] = []
     internal var tableView: NSTableView!
     internal var currentSelectedRow: Int = -1
+    private let decoration = DopamineCandidateDecoration()
 
     override func loadView() {
         // 親ビュー（ZStackのような役割）
@@ -145,8 +146,14 @@ class BaseCandidateViewController: NSViewController {
         self.tableView.dataSource = self
         self.tableView.selectionHighlightStyle = .regular
         self.tableView.rowHeight = 32
+        self.decoration.install(in: containerView, tableView: self.tableView)
 
         self.view = containerView
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        self.decoration.layout(in: self.view.bounds)
     }
 
     override func viewDidLoad() {
@@ -157,6 +164,7 @@ class BaseCandidateViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         configureWindowForRoundedCorners()
+        self.decoration.playAppear(on: self.view.layer)
     }
 
     internal func configureWindowForRoundedCorners() {
@@ -195,6 +203,7 @@ class BaseCandidateViewController: NSViewController {
 
     internal func updateSelection(to row: Int, notifySelectionChange: Bool = true) {
         if row == -1 {
+            self.decoration.moveSelection(to: nil)
             return
         }
         self.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
@@ -202,6 +211,7 @@ class BaseCandidateViewController: NSViewController {
         self.updateSelectionCallback(row, notifySelectionChange: notifySelectionChange)
         self.currentSelectedRow = row
         self.updateVisibleRows()
+        self.decoration.moveSelection(to: self.tableView.rect(ofRow: row))
     }
 
     internal func updateSelectionCallback(_ row: Int, notifySelectionChange: Bool) {}
@@ -314,7 +324,7 @@ extension BaseCandidateViewController: NSTableViewDelegate, NSTableViewDataSourc
         var rowView = tableView.makeView(withIdentifier: identifier, owner: nil) as? NSTableRowView
 
         if rowView == nil {
-            rowView = NSTableRowView()
+            rowView = DopamineCandidateRowView()
             rowView?.identifier = identifier
         }
 
