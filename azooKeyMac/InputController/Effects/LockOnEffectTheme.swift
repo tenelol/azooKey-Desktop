@@ -77,8 +77,9 @@ final class LockOnEffectTheme: EffectTheme {
 
     /// 打鍵の残光。Ghostty の typing ignite と同じ長さにする
     private static let igniteDuration: CFTimeInterval = 0.42
-    private static let lockTime: CFTimeInterval = 0.24
-    private static let lockDuration: CFTimeInterval = 0.8
+    /// 確定は Enter の直後に手応えが欲しいので、ブラケットは短い距離を一瞬で吸い付かせる
+    private static let lockTime: CFTimeInterval = 0.08
+    private static let lockDuration: CFTimeInterval = 0.7
 
     func keystroke(at caret: CGRect) {
         guard let (root, local) = EffectOverlayWindow.shared.prepareRoot(for: caret) else {
@@ -126,7 +127,7 @@ final class LockOnEffectTheme: EffectTheme {
 
     func commit(_ text: String, at caret: CGRect) {
         // 英字は1文字ずつ確定されるため、打鍵の残光だけにしてロックオンは出さない
-        guard text.count >= 2, let (root, local) = EffectOverlayWindow.shared.prepareRoot(for: caret) else {
+        guard text.count >= 2 || !text.allSatisfy(\.isASCII), let (root, local) = EffectOverlayWindow.shared.prepareRoot(for: caret) else {
             return
         }
         let height = max(local.height, 12)
@@ -141,12 +142,12 @@ final class LockOnEffectTheme: EffectTheme {
         brackets.opacity = 0
         root.addSublayer(brackets)
         let approachScale = CABasicAnimation(keyPath: "transform.scale")
-        approachScale.fromValue = 2.6
+        approachScale.fromValue = 1.5
         approachScale.toValue = 1
         approachScale.duration = Self.lockTime
         approachScale.timingFunction = LockOnHUD.homing
         let approachTurn = CABasicAnimation(keyPath: "transform.rotation.z")
-        approachTurn.fromValue = 0.9
+        approachTurn.fromValue = 0.3
         approachTurn.toValue = 0
         approachTurn.duration = Self.lockTime
         approachTurn.timingFunction = LockOnHUD.homing
@@ -155,8 +156,9 @@ final class LockOnEffectTheme: EffectTheme {
         let color = LockOnHUD.cooling(keyPath: "strokeColor", duration: 0.3)
         color.beginTime = Self.lockTime
         let opacity = CAKeyframeAnimation(keyPath: "opacity")
-        opacity.values = [0, 0.9, 1, 1, 0]
-        opacity.keyTimes = [0, 0.15, 0.3, 0.7, 1]
+        // 確定した瞬間から見えているよう、最初のフレームから不透明にする
+        opacity.values = [1, 1, 0]
+        opacity.keyTimes = [0, 0.6, 1]
         let group = CAAnimationGroup()
         group.animations = [approachScale, approachTurn, wobble, color, opacity]
         group.duration = Self.lockDuration

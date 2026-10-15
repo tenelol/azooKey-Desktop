@@ -190,6 +190,19 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
     @MainActor
     override func commitComposition(_ sender: Any!) {
         let activationGeneration = self.activationGeneration
+        // 入力ソースの切り替えでは直後に deactivate され、サーバーの応答は世代違いで捨てられて
+        // 入力中の文字が消える。表示中の文字列をここで同期的に確定し、サーバーには学習のために伝える
+        let text = self.currentMarkedText().elements.map(\.content).joined()
+        let client = (sender as? IMKTextInput) ?? self.client()
+        let insertedLocally = !text.isEmpty && client != nil
+        if insertedLocally, let client {
+            client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            self.currentConverterView = nil
+            self.inputState = .none
+            self.refreshCandidateWindow()
+            self.refreshPredictionWindow()
+            self.refreshReplaceSuggestionWindow()
+        }
         self.converterServerClient.sendIfSessionOpen({ _ in .composition(.commit) }, completion: { [weak self] response in
             Task { @MainActor in
                 guard let self,
@@ -197,7 +210,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                       let response else {
                     return
                 }
-                self.apply(response)
+                // 確定済みの文字列を応答から二重に挿入しない
+                self.apply(response, applyingEffects: !insertedLocally)
             }
         })
     }
@@ -412,13 +426,13 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
     }
 
     @MainActor
-    private func apply(_ response: ConverterServerResponse) {
+    private func apply(_ response: ConverterServerResponse, applyingEffects: Bool = true) {
         if let inputLanguage = response.inputLanguage {
             self.inputLanguage = inputLanguage
         }
         self.inputState = response.inputState.inputState
         self.currentConverterView = response.snapshot
-        if let client = self.client() {
+        if applyingEffects, let client = self.client() {
             for effect in response.effects {
                 self.apply(effect, client: client)
             }
@@ -433,7 +447,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                 text += inserted
             }
         }
-        if !committedText.isEmpty, let caret = self.effectCaretRect() {
+        if applyingEffects, !committedText.isEmpty, let caret = self.effectCaretRect() {
             EffectThemes.current.commit(committedText, at: caret)
         }
     }

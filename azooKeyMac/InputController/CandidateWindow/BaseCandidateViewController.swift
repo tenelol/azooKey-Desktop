@@ -206,6 +206,10 @@ class BaseCandidateViewController: NSViewController {
         cursorLocation: CGPoint
     ) {
         self.syncDecoration()
+        // 隠れていたウィンドウを出し直すときは、前回の変換で最後に選んでいた行から滑らせない
+        if self.view.window?.isVisible != true {
+            self.decoration?.moveSelection(toRow: nil)
+        }
         self.candidates = candidates
         self.currentSelectedRow = selectionIndex ?? -1
         self.tableView.reloadData()
