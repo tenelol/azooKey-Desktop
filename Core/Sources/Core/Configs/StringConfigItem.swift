@@ -60,3 +60,27 @@ extension Config {
         public static let key: String = "dev.ensan.inputmethod.azooKeyMac.preference.PromptHistory"
     }
 }
+
+extension Config {
+    /// 打鍵・確定・候補ウィンドウの演出テーマのID
+    public struct EffectTheme: ConfigItem {
+        public init() {}
+
+        static let `default` = "dopamine"
+        /// テーマ選択の前に使っていた演出のオン・オフ設定
+        static let legacyEnabledKey = "dev.ensan.inputmethod.azooKeyMac.preference.dopamineEffects"
+        public static let key: String = "dev.ensan.inputmethod.azooKeyMac.preference.effectTheme"
+
+        public var value: String {
+            get {
+                if let value = Config.string(forKey: Self.key) {
+                    return value
+                }
+                return Config.object(forKey: Self.legacyEnabledKey) as? Bool == false ? "off" : Self.default
+            }
+            nonmutating set {
+                Config.set(newValue, forKey: Self.key)
+            }
+        }
+    }
+}

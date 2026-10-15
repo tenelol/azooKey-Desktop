@@ -93,7 +93,8 @@ class BaseCandidateViewController: NSViewController {
     internal var candidates: [ConverterCandidatePresentation] = []
     internal var tableView: NSTableView!
     internal var currentSelectedRow: Int = -1
-    private let decoration = DopamineCandidateDecoration()
+    private var decoration: (any CandidateDecoration)?
+    private var decorationThemeID: String?
 
     override func loadView() {
         // 親ビュー（ZStackのような役割）
@@ -146,14 +147,27 @@ class BaseCandidateViewController: NSViewController {
         self.tableView.dataSource = self
         self.tableView.selectionHighlightStyle = .regular
         self.tableView.rowHeight = 32
-        self.decoration.install(in: containerView, tableView: self.tableView)
 
         self.view = containerView
+        self.syncDecoration()
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        self.decoration.layout(in: self.view.bounds)
+        self.decoration?.layout(in: self.view.bounds)
+    }
+
+    /// 選択中の演出テーマが変わっていたら装飾を付け替える
+    private func syncDecoration() {
+        let theme = EffectThemes.current
+        guard theme.id != self.decorationThemeID else {
+            return
+        }
+        self.decoration?.uninstall()
+        self.decoration = theme.makeCandidateDecoration()
+        self.decoration?.install(in: self.view, tableView: self.tableView)
+        self.decoration?.layout(in: self.view.bounds)
+        self.decorationThemeID = theme.id
     }
 
     override func viewDidLoad() {
@@ -164,7 +178,7 @@ class BaseCandidateViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         configureWindowForRoundedCorners()
-        self.decoration.playAppear(on: self.view.layer)
+        self.decoration?.playAppear(on: self.view.layer)
     }
 
     internal func configureWindowForRoundedCorners() {
@@ -191,6 +205,7 @@ class BaseCandidateViewController: NSViewController {
         selectionIndex: Int?,
         cursorLocation: CGPoint
     ) {
+        self.syncDecoration()
         self.candidates = candidates
         self.currentSelectedRow = selectionIndex ?? -1
         self.tableView.reloadData()
@@ -203,7 +218,7 @@ class BaseCandidateViewController: NSViewController {
 
     internal func updateSelection(to row: Int, notifySelectionChange: Bool = true) {
         if row == -1 {
-            self.decoration.moveSelection(toRow: nil)
+            self.decoration?.moveSelection(toRow: nil)
             return
         }
         self.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
@@ -211,7 +226,7 @@ class BaseCandidateViewController: NSViewController {
         self.updateSelectionCallback(row, notifySelectionChange: notifySelectionChange)
         self.currentSelectedRow = row
         self.updateVisibleRows()
-        self.decoration.moveSelection(toRow: row)
+        self.decoration?.moveSelection(toRow: row)
     }
 
     internal func updateSelectionCallback(_ row: Int, notifySelectionChange: Bool) {}
@@ -324,7 +339,7 @@ extension BaseCandidateViewController: NSTableViewDelegate, NSTableViewDataSourc
         var rowView = tableView.makeView(withIdentifier: identifier, owner: nil) as? NSTableRowView
 
         if rowView == nil {
-            rowView = DopamineCandidateRowView()
+            rowView = EffectCandidateRowView()
             rowView?.identifier = identifier
         }
 

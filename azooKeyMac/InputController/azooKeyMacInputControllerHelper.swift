@@ -14,6 +14,8 @@ extension azooKeyMacInputController {
         self.transformSelectedTextMenuItem.target = self
         self.appMenu.addItem(self.transformSelectedTextMenuItem)
         self.appMenu.addItem(NSMenuItem.separator())
+        self.addEffectThemeMenuItems()
+        self.appMenu.addItem(NSMenuItem.separator())
         self.appMenu.addItem(NSMenuItem(title: "設定…", action: #selector(self.openConfigWindow(_:)), keyEquivalent: ""))
         self.appMenu.addItem(NSMenuItem(title: "View on GitHub…", action: #selector(self.openGitHubRepository(_:)), keyEquivalent: ""))
         self.updateTransformSelectedTextMenuItemEnabledState()
@@ -29,6 +31,41 @@ extension azooKeyMacInputController {
     func updateLiveConversionToggleMenuItem(newValue: Bool) {
         self.liveConversionToggleMenuItem.state = newValue ? .on : .off
         self.liveConversionToggleMenuItem.title = "ライブ変換"
+    }
+
+    // MARK: - Effect Theme
+
+    /// 入力メニューにテーマを並べ、選ぶとその場で切り替える
+    private func addEffectThemeMenuItems() {
+        let header = NSMenuItem(title: "演出テーマ", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        self.appMenu.addItem(header)
+        // setupMenu は IMK から main thread で呼ばれる
+        let themes = MainActor.assumeIsolated { EffectThemes.all.map { (id: $0.id, title: $0.title) } }
+        for theme in themes {
+            let item = NSMenuItem(title: theme.title, action: #selector(self.selectEffectTheme(_:)), keyEquivalent: "")
+            item.representedObject = theme.id
+            item.indentationLevel = 1
+            self.appMenu.addItem(item)
+        }
+        self.updateEffectThemeMenuItems()
+    }
+
+    @objc func selectEffectTheme(_ sender: Any) {
+        // IMK はメニュー項目を kIMKCommandMenuItemName に入れた辞書を sender として渡す
+        let item = (sender as? NSMenuItem) ?? ((sender as? [AnyHashable: Any])?[kIMKCommandMenuItemName] as? NSMenuItem)
+        guard let id = item?.representedObject as? String else {
+            return
+        }
+        Config.EffectTheme().value = id
+        self.updateEffectThemeMenuItems()
+    }
+
+    func updateEffectThemeMenuItems() {
+        let current = Config.EffectTheme().value
+        for item in self.appMenu.items where item.action == #selector(self.selectEffectTheme(_:)) {
+            item.state = item.representedObject as? String == current ? .on : .off
+        }
     }
 
     private enum TransformMenuTitle {

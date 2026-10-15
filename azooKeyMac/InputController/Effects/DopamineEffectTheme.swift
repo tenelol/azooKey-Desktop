@@ -1,13 +1,13 @@
 import AppKit
-import Core
 import CoreText
 import QuartzCore
 
-/// 打鍵・確定に合わせて画面全体へコンボ演出を重ねるオーバーレイ。
-/// IMKInputController はクライアントごとに生成されるため、演出状態は共有インスタンスで保持する。
+/// コンボ数・ランク・キーワードで派手に盛り上げる演出。
+/// IMKInputController はクライアントごとに生成されるため、コンボ状態はテーマ側で保持する。
 @MainActor
-final class DopamineEffectOverlay {
-    static let shared = DopamineEffectOverlay()
+final class DopamineEffectTheme: EffectTheme {
+    let id = "dopamine"
+    let title = "ドーパミン"
 
     private struct Rank {
         var letter: String
@@ -24,15 +24,13 @@ final class DopamineEffectOverlay {
     }
 
     private static let comboTimeout: TimeInterval = 3.0
-    /// 最も長い演出（粒子の寿命）が終わるまで待ってからウィンドウを隠す
-    private static let idleHideDelay: TimeInterval = 5.0
     private static let keywordBufferLength = 32
 
     private static let keywordEffects: [KeywordEffect] = [
         .init(
             keywords: ["リリース", "release", "ship", "デプロイ", "deploy", "完成", "マージ", "merge", "公開"],
             title: "SHIPPED!",
-            colors: [.dopamineHex(0xB45CFF), .dopamineHex(0x5CF2FF), .dopamineHex(0x5CFF8F)],
+            colors: [.effectHex(0xB45CFF), .effectHex(0x5CF2FF), .effectHex(0x5CFF8F)],
             emoji: ["🚀", "✨"],
             tint: nil,
             rockets: true
@@ -40,61 +38,51 @@ final class DopamineEffectOverlay {
         .init(
             keywords: ["好き", "すき", "愛", "love", "かわいい", "可愛い"],
             title: "LOVE",
-            colors: [.dopamineHex(0xFF4D6D), .dopamineHex(0xFF9ECF), .dopamineHex(0xFFD1E8)],
+            colors: [.effectHex(0xFF4D6D), .effectHex(0xFF9ECF), .effectHex(0xFFD1E8)],
             emoji: ["💖", "💕", "😍"],
-            tint: .dopamineHex(0xFF2D6F)
+            tint: .effectHex(0xFF2D6F)
         ),
         .init(
             keywords: ["最強", "天才", "完璧", "最高", "critical"],
             title: "CRITICAL!!",
-            colors: [.dopamineHex(0xFFE45C), .dopamineHex(0xFF9F1C), .dopamineHex(0xFF4D6D)],
+            colors: [.effectHex(0xFFE45C), .effectHex(0xFF9F1C), .effectHex(0xFF4D6D)],
             emoji: ["💎", "✨", "⭐️"],
-            tint: .dopamineHex(0xFFB020)
+            tint: .effectHex(0xFFB020)
         ),
         .init(
             keywords: ["ドーパミン", "ドパ", "やばい", "ヤバい", "すごい", "凄い"],
             title: "MEGA HIT",
-            colors: [.dopamineHex(0x5CF2FF), .dopamineHex(0x8F7BFF), .dopamineHex(0xFF5CF2)],
+            colors: [.effectHex(0x5CF2FF), .effectHex(0x8F7BFF), .effectHex(0xFF5CF2)],
             emoji: ["⚡️", "🔥", "💥"],
-            tint: .dopamineHex(0x7B5CFF)
+            tint: .effectHex(0x7B5CFF)
         ),
         .init(
             keywords: ["ありがとう", "感謝", "thanks", "thank you"],
             title: "THANKS!!",
-            colors: [.dopamineHex(0x5CFF8F), .dopamineHex(0xFFE45C)],
+            colors: [.effectHex(0x5CFF8F), .effectHex(0xFFE45C)],
             emoji: ["🙏", "🌸", "🎉"],
             tint: nil
         ),
         .init(
             keywords: ["バグ", "bug", "エラー", "error"],
             title: "BUG?!",
-            colors: [.dopamineHex(0xA3FF5C), .dopamineHex(0x2EC27E)],
+            colors: [.effectHex(0xA3FF5C), .effectHex(0x2EC27E)],
             emoji: ["🐛", "💥", "🪲"],
-            tint: .dopamineHex(0x2EC27E)
+            tint: .effectHex(0x2EC27E)
         )
     ]
 
-    private var window: NSPanel?
-    private var rootLayer: CALayer?
     private var comboLayer: CALayer?
     private var comboTimerLayer: CALayer?
     private var combo = 0
     private var resetWorkItem: DispatchWorkItem?
-    private var hideWorkItem: DispatchWorkItem?
     private var recentCommittedText = ""
     private var imageCache: [String: CGImage] = [:]
 
-    private init() {}
+    // MARK: - EffectTheme
 
-    private var isEnabled: Bool {
-        Config.DopamineEffects().value
-    }
-
-    // MARK: - Public entry points
-
-    /// 文字入力の打鍵ごとに呼ぶ。`point` はスクリーン座標（左下原点）のキャレット位置。
-    func registerKeystroke(at point: CGPoint) {
-        guard self.isEnabled, let (root, local) = self.prepareRoot(for: point) else {
+    func keystroke(at caret: CGRect) {
+        guard let (root, local) = self.prepareRoot(for: caret) else {
             return
         }
         self.combo += 1
@@ -108,9 +96,9 @@ final class DopamineEffectOverlay {
         self.scheduleComboReset()
     }
 
-    /// 確定文字列ごとに呼ぶ。キーワードを含む場合は専用の演出を出す。
-    func registerCommit(_ text: String, at point: CGPoint) {
-        guard self.isEnabled, let (root, local) = self.prepareRoot(for: point) else {
+    /// キーワードを含む確定文字列には専用の演出を出す
+    func commit(_ text: String, at caret: CGRect) {
+        guard let (root, local) = self.prepareRoot(for: caret) else {
             return
         }
         // 英字入力は1文字ずつ確定されるため、直近の確定文字列をまとめてキーワード判定する
@@ -120,64 +108,24 @@ final class DopamineEffectOverlay {
             self.recentCommittedText = ""
             self.playKeywordEffect(effect, near: local, in: root)
         } else if text.count >= 2 {
-            self.showFloatingText("NICE!", colors: [.dopamineHex(0x5CF2FF), .dopamineHex(0xFFFFFF)], at: local, in: root)
+            self.showFloatingText("NICE!", colors: [.effectHex(0x5CF2FF), .effectHex(0xFFFFFF)], at: local, in: root)
         }
     }
 
-    // MARK: - Window
-
-    private func prepareRoot(for point: CGPoint) -> (CALayer, CGPoint)? {
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main else {
-            return nil
-        }
-        let window = self.window ?? self.makeWindow()
-        if window.frame != screen.frame {
-            window.setFrame(screen.frame, display: false)
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            self.rootLayer?.frame = CGRect(origin: .zero, size: screen.frame.size)
-            CATransaction.commit()
-        }
-        window.orderFrontRegardless()
-        self.scheduleHide()
-        guard let root = self.rootLayer else {
-            return nil
-        }
-        let local = CGPoint(x: point.x - screen.frame.minX, y: point.y - screen.frame.minY)
-        return (root, local)
+    func makeCandidateDecoration() -> (any CandidateDecoration)? {
+        DopamineCandidateDecoration()
     }
 
-    private func makeWindow() -> NSPanel {
-        let panel = NSPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        // 候補ウィンドウ（popUpMenu）やメニューバーより上に描く
-        panel.level = .screenSaver
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-
-        let view = NSView()
-        view.wantsLayer = true
-        let root = CALayer()
-        root.masksToBounds = false
-        view.layer = root
-        panel.contentView = view
-
-        self.window = panel
-        self.rootLayer = root
-        return panel
+    /// コンボ演出はキャレット行の左端・中央を基準にする
+    private func prepareRoot(for caret: CGRect) -> (CALayer, CGPoint)? {
+        guard let (root, local) = EffectOverlayWindow.shared.prepareRoot(for: caret) else {
+            return nil
+        }
+        return (root, CGPoint(x: local.minX, y: local.midY))
     }
 
     private var backingScale: CGFloat {
-        self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        EffectOverlayWindow.shared.backingScale
     }
 
     // MARK: - Combo
@@ -185,13 +133,13 @@ final class DopamineEffectOverlay {
     private static func rank(for combo: Int) -> Rank {
         switch combo {
         case ..<10:
-            Rank(letter: "C", colors: [.dopamineHex(0x5CF2FF), .dopamineHex(0x3B82F6)])
+            Rank(letter: "C", colors: [.effectHex(0x5CF2FF), .effectHex(0x3B82F6)])
         case ..<20:
-            Rank(letter: "B", colors: [.dopamineHex(0xFFE45C), .dopamineHex(0xFF9F1C)])
+            Rank(letter: "B", colors: [.effectHex(0xFFE45C), .effectHex(0xFF9F1C)])
         case ..<30:
-            Rank(letter: "A", colors: [.dopamineHex(0xFFB020), .dopamineHex(0xFF4D6D)])
+            Rank(letter: "A", colors: [.effectHex(0xFFB020), .effectHex(0xFF4D6D)])
         default:
-            Rank(letter: "S", colors: [.dopamineHex(0xFF4D6D), .dopamineHex(0xFFE45C), .dopamineHex(0x5CFF8F), .dopamineHex(0x5CF2FF), .dopamineHex(0xB45CFF)])
+            Rank(letter: "S", colors: [.effectHex(0xFF4D6D), .effectHex(0xFFE45C), .effectHex(0x5CFF8F), .effectHex(0x5CF2FF), .effectHex(0xB45CFF)])
         }
     }
 
@@ -263,19 +211,6 @@ final class DopamineEffectOverlay {
         timer.add(drain, forKey: "drain")
     }
 
-    /// 透明でも全画面ウィンドウが前面に残ると他のツールやウィンドウマネージャから見えるため、
-    /// 演出がない間は画面から外す
-    private func scheduleHide() {
-        self.hideWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                self?.window?.orderOut(nil)
-            }
-        }
-        self.hideWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.idleHideDelay, execute: workItem)
-    }
-
     private func scheduleComboReset() {
         self.resetWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
@@ -306,7 +241,7 @@ final class DopamineEffectOverlay {
         case 30...: "ON FIRE x\(self.combo)"
         default: "COMBO x\(self.combo)"
         }
-        let colors: [NSColor] = [.dopamineHex(0x5CFF8F), .dopamineHex(0xFFE45C), .dopamineHex(0xFF9F1C), .dopamineHex(0xFF4D6D)]
+        let colors: [NSColor] = [.effectHex(0x5CFF8F), .effectHex(0xFFE45C), .effectHex(0xFF9F1C), .effectHex(0xFF4D6D)]
         // 入力中の文字を隠さないよう、節目の見出しは画面右上に出す
         let center = CGPoint(x: root.bounds.maxX - 280, y: root.bounds.maxY - 120)
         // 後から追加したレイヤーほど手前に描かれるため、見出しは最後に重ねる
@@ -358,7 +293,7 @@ final class DopamineEffectOverlay {
         let group = CAAnimationGroup()
         group.animations = [scale, rotation, opacity]
         group.duration = 1.7
-        self.run(group, on: layer, removeAfter: true)
+        layer.addEffectAnimation(group, removeAfter: true)
     }
 
     private func showFloatingText(_ text: String, colors: [NSColor], at point: CGPoint, in root: CALayer) {
@@ -383,7 +318,7 @@ final class DopamineEffectOverlay {
         group.animations = [rise, scale, opacity]
         group.duration = 0.8
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        self.run(group, on: layer, removeAfter: true)
+        layer.addEffectAnimation(group, removeAfter: true)
     }
 
     private func emitSparks(at point: CGPoint, colors: [NSColor], intensity: CGFloat, in root: CALayer) {
@@ -508,7 +443,7 @@ final class DopamineEffectOverlay {
         group.animations = [scale, opacity, width]
         group.duration = 0.75
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        self.run(group, on: ring, removeAfter: true)
+        ring.addEffectAnimation(group, removeAfter: true)
     }
 
     private func flashEdges(color: NSColor, in root: CALayer) {
@@ -527,7 +462,7 @@ final class DopamineEffectOverlay {
         opacity.values = [0, 0.7, 0.35, 0]
         opacity.keyTimes = [0, 0.1, 0.4, 1]
         opacity.duration = 0.8
-        self.run(opacity, on: border, removeAfter: true)
+        border.addEffectAnimation(opacity, removeAfter: true)
     }
 
     private func tintScreen(_ color: NSColor, in root: CALayer) {
@@ -541,7 +476,7 @@ final class DopamineEffectOverlay {
         opacity.values = [0, 1, 1, 0]
         opacity.keyTimes = [0, 0.15, 0.6, 1]
         opacity.duration = 1.4
-        self.run(opacity, on: tint, removeAfter: true)
+        tint.addEffectAnimation(opacity, removeAfter: true)
     }
 
     private func launchRockets(in root: CALayer) {
@@ -555,7 +490,7 @@ final class DopamineEffectOverlay {
             layer.contents = rocket
             layer.contentsScale = self.backingScale
             layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
-            layer.shadowColor = NSColor.dopamineHex(0xFF9F1C).cgColor
+            layer.shadowColor = NSColor.effectHex(0xFF9F1C).cgColor
             layer.shadowOffset = .zero
             layer.shadowRadius = 10
             layer.shadowOpacity = 0.9
@@ -576,19 +511,8 @@ final class DopamineEffectOverlay {
             group.duration = .random(in: 0.9...1.5)
             group.beginTime = CACurrentMediaTime() + Double(index) * 0.07
             group.fillMode = .backwards
-            self.run(group, on: layer, removeAfter: true)
+            layer.addEffectAnimation(group, removeAfter: true)
         }
-    }
-
-    private func run(_ animation: CAAnimation, on layer: CALayer, removeAfter: Bool) {
-        CATransaction.begin()
-        if removeAfter {
-            CATransaction.setCompletionBlock {
-                layer.removeFromSuperlayer()
-            }
-        }
-        layer.add(animation, forKey: nil)
-        CATransaction.commit()
     }
 
     private func clamped(_ center: CGPoint, size: CGSize, in bounds: CGRect) -> CGPoint {

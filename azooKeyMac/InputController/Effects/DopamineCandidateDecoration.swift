@@ -1,26 +1,15 @@
 import AppKit
-import Core
 import QuartzCore
-
-/// コンボ演出が有効なとき、システムの選択ハイライトを描かずに装飾側のハイライトへ任せる行ビュー
-final class DopamineCandidateRowView: NSTableRowView {
-    override func drawSelection(in dirtyRect: NSRect) {
-        guard !Config.DopamineEffects().value else {
-            return
-        }
-        super.drawSelection(in: dirtyRect)
-    }
-}
 
 /// 候補ウィンドウの縁を流れるネオン枠と、選択行へ滑って移動するハイライト
 @MainActor
-final class DopamineCandidateDecoration {
+final class DopamineCandidateDecoration: CandidateDecoration {
     private static let cornerRadius: CGFloat = 16
     private static let borderColors: [NSColor] = [
-        .dopamineHex(0xFF4D6D), .dopamineHex(0xFFE45C), .dopamineHex(0x5CFF8F),
-        .dopamineHex(0x5CF2FF), .dopamineHex(0xB45CFF), .dopamineHex(0xFF4D6D)
+        .effectHex(0xFF4D6D), .effectHex(0xFFE45C), .effectHex(0x5CFF8F),
+        .effectHex(0x5CF2FF), .effectHex(0xB45CFF), .effectHex(0xFF4D6D)
     ]
-    private static let selectionColors: [NSColor] = [.dopamineHex(0xFF4D9D), .dopamineHex(0xB45CFF), .dopamineHex(0x5C8BFF)]
+    private static let selectionColors: [NSColor] = [.effectHex(0xFF4D9D), .effectHex(0xB45CFF), .effectHex(0x5C8BFF)]
 
     private let borderContainer = CALayer()
     private let borderGradient = CAGradientLayer()
@@ -30,10 +19,6 @@ final class DopamineCandidateDecoration {
     private var selectionVisible = false
     private var lastScrollOffset: CGFloat = 0
     private weak var tableView: NSTableView?
-
-    private var isEnabled: Bool {
-        Config.DopamineEffects().value
-    }
 
     func install(in container: NSView, tableView: NSTableView) {
         container.wantsLayer = true
@@ -78,7 +63,18 @@ final class DopamineCandidateDecoration {
 
         container.layer?.addSublayer(self.borderContainer)
         tableView.layer?.insertSublayer(self.selection, at: 0)
-        self.applyEnabledState()
+
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = -2 * CGFloat.pi
+        spin.duration = 3
+        spin.repeatCount = .infinity
+        self.borderGradient.add(spin, forKey: "spin")
+    }
+
+    func uninstall() {
+        self.borderContainer.removeFromSuperlayer()
+        self.selection.removeFromSuperlayer()
     }
 
     func layout(in bounds: CGRect) {
@@ -98,18 +94,16 @@ final class DopamineCandidateDecoration {
         self.borderGradient.bounds = CGRect(x: 0, y: 0, width: side, height: side)
         self.borderGradient.position = CGPoint(x: bounds.midX, y: bounds.midY)
         CATransaction.commit()
-        self.applyEnabledState()
     }
 
     func moveSelection(toRow row: Int?) {
-        self.applyEnabledState()
-        guard self.isEnabled, let row, let target = self.layerRect(ofRow: row) else {
+        guard let row, let tableView = self.tableView, let target = tableView.effectRect(ofRow: row, inset: CGSize(width: 5, height: 2)) else {
             self.selection.opacity = 0
             self.selectionVisible = false
             return
         }
         // 選択に合わせて一覧がスクロールした分だけ開始位置をずらし、見た目の位置から動かす
-        let scrollOffset = self.tableView?.enclosingScrollView?.contentView.bounds.minY ?? 0
+        let scrollOffset = tableView.effectScrollOffset
         var previous = self.selection.presentation()?.frame ?? self.selection.frame
         previous.origin.y += scrollOffset - self.lastScrollOffset
         self.lastScrollOffset = scrollOffset
@@ -160,17 +154,9 @@ final class DopamineCandidateDecoration {
         self.selectionVisible = true
     }
 
-    /// clip view 側で座標系が反転済みのため、行の矩形はそのまま layer 座標として使える
-    private func layerRect(ofRow row: Int) -> CGRect? {
-        guard let tableView = self.tableView, row >= 0, row < tableView.numberOfRows else {
-            return nil
-        }
-        return tableView.rect(ofRow: row).insetBy(dx: 5, dy: 2)
-    }
-
     /// ウィンドウが表示されたときに下から浮き上がらせる
     func playAppear(on layer: CALayer?) {
-        guard self.isEnabled, let layer else {
+        guard let layer else {
             return
         }
         let fade = CABasicAnimation(keyPath: "opacity")
@@ -185,35 +171,5 @@ final class DopamineCandidateDecoration {
         group.animations = [fade, rise]
         group.duration = rise.settlingDuration
         layer.add(group, forKey: "appear")
-    }
-
-    private func applyEnabledState() {
-        let enabled = self.isEnabled
-        self.borderContainer.isHidden = !enabled
-        if enabled {
-            if self.borderGradient.animation(forKey: "spin") == nil {
-                let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-                spin.fromValue = 0
-                spin.toValue = -2 * CGFloat.pi
-                spin.duration = 3
-                spin.repeatCount = .infinity
-                self.borderGradient.add(spin, forKey: "spin")
-            }
-        } else {
-            self.borderGradient.removeAnimation(forKey: "spin")
-            self.selection.opacity = 0
-            self.selectionVisible = false
-        }
-    }
-}
-
-extension NSColor {
-    static func dopamineHex(_ value: UInt32) -> NSColor {
-        NSColor(
-            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
     }
 }

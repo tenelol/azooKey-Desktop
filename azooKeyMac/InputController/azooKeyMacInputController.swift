@@ -148,6 +148,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         super.activateServer(sender)
         self.activationGeneration &+= 1
         self.updateLiveConversionToggleMenuItem(newValue: self.liveConversionEnabled)
+        self.updateEffectThemeMenuItems()
         self.updateTransformSelectedTextMenuItemEnabledState()
         // ピン留めプロンプトのキャッシュを更新
         self.reloadPinnedPromptsCache()
@@ -389,8 +390,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                     self.appendDebugMessage("Consumed delayed fallthrough event \(request.eventID)")
                 }
                 self.apply(response)
-                if Self.isDopamineKeystroke(event), let point = self.dopamineAnchorPoint() {
-                    DopamineEffectOverlay.shared.registerKeystroke(at: point)
+                if Self.isEffectKeystroke(event), let caret = self.effectCaretRect() {
+                    EffectThemes.current.keystroke(at: caret)
                 }
             }
         }
@@ -432,13 +433,13 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                 text += inserted
             }
         }
-        if !committedText.isEmpty, let point = self.dopamineAnchorPoint() {
-            DopamineEffectOverlay.shared.registerCommit(committedText, at: point)
+        if !committedText.isEmpty, let caret = self.effectCaretRect() {
+            EffectThemes.current.commit(committedText, at: caret)
         }
     }
 
-    /// 文字を打った打鍵だけをコンボに数える（Enter・Backspace・矢印キー・ショートカットは除く）
-    private static func isDopamineKeystroke(_ event: KeyEventCore) -> Bool {
+    /// 文字を打った打鍵だけを演出の対象にする（Enter・Backspace・矢印キー・ショートカットは除く）
+    private static func isEffectKeystroke(_ event: KeyEventCore) -> Bool {
         guard event.modifierFlags.isDisjoint(with: [.command, .control]),
               let scalar = event.characters?.unicodeScalars.first else {
             return false
@@ -447,10 +448,10 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         return scalar.value >= 0x20 && scalar.value != 0x7F && !(0xF700...0xF8FF).contains(scalar.value)
     }
 
-    /// 演出の基準位置（スクリーン座標）。キャレット位置を取れないクライアントではマウス位置を使う
+    /// 演出の基準にするキャレット行の矩形（スクリーン座標）。取れないクライアントではマウス位置を使う
     @MainActor
-    private func dopamineAnchorPoint() -> CGPoint? {
-        guard Config.DopamineEffects().value, let client = self.client() else {
+    private func effectCaretRect() -> CGRect? {
+        guard EffectThemes.isActive, let client = self.client() else {
             return nil
         }
         let selection = self.currentMarkedText().selectionRange.location
@@ -460,10 +461,11 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
             var rect: NSRect = .zero
             client.attributes(forCharacterIndex: index, lineHeightRectangle: &rect)
             if rect != .zero {
-                return CGPoint(x: rect.minX, y: rect.midY)
+                return rect
             }
         }
-        return NSEvent.mouseLocation
+        let mouse = NSEvent.mouseLocation
+        return CGRect(x: mouse.x, y: mouse.y - 9, width: 0, height: 18)
     }
 
     @MainActor
