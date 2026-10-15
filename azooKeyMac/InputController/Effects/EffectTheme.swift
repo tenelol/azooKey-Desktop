@@ -28,7 +28,7 @@ protocol CandidateDecoration: AnyObject {
 @MainActor
 enum EffectThemes {
     static let off = OffEffectTheme()
-    static let all: [any EffectTheme] = [off, LockOnEffectTheme(), DopamineEffectTheme()]
+    static let all: [any EffectTheme] = [off, RippleEffectTheme(), LockOnEffectTheme(), DopamineEffectTheme()]
 
     static var current: any EffectTheme {
         let id = Config.EffectTheme().value

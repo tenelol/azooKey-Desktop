@@ -1,9 +1,9 @@
 import AppKit
 import QuartzCore
 
-/// Ghostty・Neovim の lock-on HUD と同じ動きの言葉で作った控えめな演出。
-/// アクセント1色と白のフラッシュ、加速しながら吸い付くホーミング、着弾後の減衰する揺れ、四隅のブラケットだけを使う。
-enum LockOnHUD {
+/// Ghostty・Neovim の lock-on HUD と同じ動きの言葉。
+/// アクセント1色と白のフラッシュ、加速しながら吸い付くホーミング、着弾後の減衰する揺れ、四隅のブラケット、広がる波紋を使う。
+enum HUDStyle {
     static let accent = NSColor.effectHex(0x7AA2F7)
     static let flash = NSColor.white
 
@@ -59,6 +59,14 @@ enum LockOnHUD {
         return layer
     }
 
+    /// 確定した文字列の幅は分からないため、行の高さから推定したフォントで測った枠
+    static func committedTextBox(_ text: String, caret: CGRect) -> CGRect {
+        let height = max(caret.height, 12)
+        let font = NSFont.systemFont(ofSize: height * 0.78)
+        let width = min(max(NSAttributedString(string: text, attributes: [.font: font]).size().width, height), 640)
+        return CGRect(x: caret.minX - width, y: caret.minY, width: width, height: height).insetBy(dx: -4, dy: -3)
+    }
+
     /// 白で点いてアクセントへ冷める色の変化
     static func cooling(keyPath: String, duration: CFTimeInterval) -> CABasicAnimation {
         let animation = CABasicAnimation(keyPath: keyPath)
@@ -91,27 +99,27 @@ final class LockOnEffectTheme: EffectTheme {
         let ignite = CALayer()
         ignite.bounds = CGRect(x: 0, y: 0, width: 2, height: height * 0.8)
         ignite.position = CGPoint(x: local.minX, y: local.midY)
-        ignite.backgroundColor = LockOnHUD.accent.cgColor
-        ignite.shadowColor = LockOnHUD.accent.cgColor
+        ignite.backgroundColor = HUDStyle.accent.cgColor
+        ignite.shadowColor = HUDStyle.accent.cgColor
         ignite.shadowOffset = .zero
         ignite.shadowRadius = 6
         ignite.shadowOpacity = 1
         ignite.opacity = 0
         root.addSublayer(ignite)
         ignite.addEffectAnimation(self.fadingGroup(
-            [LockOnHUD.cooling(keyPath: "backgroundColor", duration: 0.24)],
+            [HUDStyle.cooling(keyPath: "backgroundColor", duration: 0.24)],
             duration: Self.igniteDuration
         ), removeAfter: true)
 
         // ベースラインから左右へ広がる細い走査線
         let scan = CAGradientLayer()
-        scan.colors = [NSColor.clear.cgColor, LockOnHUD.accent.cgColor, LockOnHUD.flash.cgColor, LockOnHUD.accent.cgColor, NSColor.clear.cgColor]
+        scan.colors = [NSColor.clear.cgColor, HUDStyle.accent.cgColor, HUDStyle.flash.cgColor, HUDStyle.accent.cgColor, NSColor.clear.cgColor]
         scan.locations = [0, 0.3, 0.5, 0.7, 1]
         scan.startPoint = CGPoint(x: 0, y: 0.5)
         scan.endPoint = CGPoint(x: 1, y: 0.5)
         scan.bounds = CGRect(x: 0, y: 0, width: height * 3.2, height: 1.5)
         scan.position = CGPoint(x: local.minX - height * 0.3, y: local.minY + 1)
-        scan.shadowColor = LockOnHUD.accent.cgColor
+        scan.shadowColor = HUDStyle.accent.cgColor
         scan.shadowOffset = .zero
         scan.shadowRadius = 3
         scan.shadowOpacity = 0.8
@@ -121,7 +129,7 @@ final class LockOnEffectTheme: EffectTheme {
         spread.fromValue = 0.15
         spread.toValue = 1
         spread.duration = Self.igniteDuration
-        spread.timingFunction = LockOnHUD.easeOut
+        spread.timingFunction = HUDStyle.easeOut
         scan.addEffectAnimation(self.fadingGroup([spread], duration: Self.igniteDuration, peak: 0.55), removeAfter: true)
     }
 
@@ -130,14 +138,10 @@ final class LockOnEffectTheme: EffectTheme {
         guard text.count >= 2 || !text.allSatisfy(\.isASCII), let (root, local) = EffectOverlayWindow.shared.prepareRoot(for: caret) else {
             return
         }
-        let height = max(local.height, 12)
-        // 確定した文字列の幅は分からないため、行の高さから推定したフォントで測る
-        let font = NSFont.systemFont(ofSize: height * 0.78)
-        let width = min(max(NSAttributedString(string: text, attributes: [.font: font]).size().width, height), 640)
-        let box = CGRect(x: local.minX - width, y: local.minY, width: width, height: height).insetBy(dx: -4, dy: -3)
+        let box = HUDStyle.committedTextBox(text, caret: local)
 
         // 四隅のブラケットが広い枠から回り込みつつ加速して吸い付く
-        let brackets = LockOnHUD.makeBrackets(size: box.size, arm: min(box.height * 0.45, 12))
+        let brackets = HUDStyle.makeBrackets(size: box.size, arm: min(box.height * 0.45, 12))
         brackets.position = CGPoint(x: box.midX, y: box.midY)
         brackets.opacity = 0
         root.addSublayer(brackets)
@@ -145,15 +149,15 @@ final class LockOnEffectTheme: EffectTheme {
         approachScale.fromValue = 1.5
         approachScale.toValue = 1
         approachScale.duration = Self.lockTime
-        approachScale.timingFunction = LockOnHUD.homing
+        approachScale.timingFunction = HUDStyle.homing
         let approachTurn = CABasicAnimation(keyPath: "transform.rotation.z")
         approachTurn.fromValue = 0.3
         approachTurn.toValue = 0
         approachTurn.duration = Self.lockTime
-        approachTurn.timingFunction = LockOnHUD.homing
-        let wobble = LockOnHUD.wobble(amount: 0.12, duration: 0.36)
+        approachTurn.timingFunction = HUDStyle.homing
+        let wobble = HUDStyle.wobble(amount: 0.12, duration: 0.36)
         wobble.beginTime = Self.lockTime
-        let color = LockOnHUD.cooling(keyPath: "strokeColor", duration: 0.3)
+        let color = HUDStyle.cooling(keyPath: "strokeColor", duration: 0.3)
         color.beginTime = Self.lockTime
         let opacity = CAKeyframeAnimation(keyPath: "opacity")
         // 確定した瞬間から見えているよう、最初のフレームから不透明にする
@@ -168,7 +172,7 @@ final class LockOnEffectTheme: EffectTheme {
         let flash = CALayer()
         flash.frame = box
         flash.cornerRadius = 3
-        flash.backgroundColor = LockOnHUD.flash.withAlphaComponent(0.28).cgColor
+        flash.backgroundColor = HUDStyle.flash.withAlphaComponent(0.28).cgColor
         flash.opacity = 0
         root.addSublayer(flash)
         let flashOpacity = CAKeyframeAnimation(keyPath: "opacity")
@@ -184,14 +188,14 @@ final class LockOnEffectTheme: EffectTheme {
         wave.position = CGPoint(x: box.midX, y: box.midY)
         wave.path = CGPath(roundedRect: wave.bounds, cornerWidth: 4, cornerHeight: 4, transform: nil)
         wave.fillColor = nil
-        wave.strokeColor = LockOnHUD.accent.cgColor
+        wave.strokeColor = HUDStyle.accent.cgColor
         wave.lineWidth = 1
         wave.opacity = 0
         root.addSublayer(wave)
         let waveScale = CABasicAnimation(keyPath: "transform.scale")
         waveScale.fromValue = 1
         waveScale.toValue = 1.35
-        waveScale.timingFunction = LockOnHUD.easeOut
+        waveScale.timingFunction = HUDStyle.easeOut
         let waveOpacity = CABasicAnimation(keyPath: "opacity")
         waveOpacity.fromValue = 0.6
         waveOpacity.toValue = 0
@@ -203,7 +207,7 @@ final class LockOnEffectTheme: EffectTheme {
     }
 
     func makeCandidateDecoration() -> (any CandidateDecoration)? {
-        LockOnCandidateDecoration()
+        HUDCandidateDecoration(showsBrackets: true)
     }
 
     /// 一瞬で点いて二乗で消える不透明度を付けたグループ
@@ -218,12 +222,13 @@ final class LockOnEffectTheme: EffectTheme {
     }
 }
 
-/// 候補ウィンドウの細いアクセント枠と、選択行へ吸い付くブラケット
+/// 候補ウィンドウの細いアクセント枠と選択行のハイライト。
+/// ブラケットありならロックオン、なしなら着いた行から波紋を広げる
 @MainActor
-final class LockOnCandidateDecoration: CandidateDecoration {
+final class HUDCandidateDecoration: CandidateDecoration {
     private static let cornerRadius: CGFloat = 16
     private static let moveDuration: CFTimeInterval = 0.14
-    private static let restingFill = LockOnHUD.accent.withAlphaComponent(0.22)
+    private static let restingFill = HUDStyle.accent.withAlphaComponent(0.22)
 
     private let border = CAShapeLayer()
     private let windowBrackets = CAShapeLayer()
@@ -233,6 +238,11 @@ final class LockOnCandidateDecoration: CandidateDecoration {
     private weak var tableView: NSTableView?
     private var selectionVisible = false
     private var lastScrollOffset: CGFloat = 0
+    private let showsBrackets: Bool
+
+    init(showsBrackets: Bool) {
+        self.showsBrackets = showsBrackets
+    }
 
     func install(in container: NSView, tableView: NSTableView) {
         container.wantsLayer = true
@@ -240,11 +250,11 @@ final class LockOnCandidateDecoration: CandidateDecoration {
         self.tableView = tableView
 
         self.border.fillColor = nil
-        self.border.strokeColor = LockOnHUD.accent.withAlphaComponent(0.45).cgColor
+        self.border.strokeColor = HUDStyle.accent.withAlphaComponent(0.45).cgColor
         self.border.lineWidth = 1
         self.border.zPosition = 100
         self.windowBrackets.fillColor = nil
-        self.windowBrackets.strokeColor = LockOnHUD.accent.cgColor
+        self.windowBrackets.strokeColor = HUDStyle.accent.cgColor
         self.windowBrackets.lineWidth = 2
         self.windowBrackets.lineCap = .square
         self.windowBrackets.zPosition = 101
@@ -252,16 +262,18 @@ final class LockOnCandidateDecoration: CandidateDecoration {
         self.selectionFill.cornerRadius = 6
         self.selectionFill.backgroundColor = Self.restingFill.cgColor
         self.selectionBrackets.fillColor = nil
-        self.selectionBrackets.strokeColor = LockOnHUD.accent.cgColor
+        self.selectionBrackets.strokeColor = HUDStyle.accent.cgColor
         self.selectionBrackets.lineWidth = 1.5
         self.selectionBrackets.lineCap = .square
-        self.selectionBrackets.shadowColor = LockOnHUD.accent.cgColor
+        self.selectionBrackets.shadowColor = HUDStyle.accent.cgColor
         self.selectionBrackets.shadowOffset = .zero
         self.selectionBrackets.shadowRadius = 4
         self.selectionBrackets.shadowOpacity = 0.8
         self.selection.addSublayer(self.selectionFill)
         self.selection.addSublayer(self.selectionBrackets)
         self.selection.opacity = 0
+        self.windowBrackets.isHidden = !self.showsBrackets
+        self.selectionBrackets.isHidden = !self.showsBrackets
 
         container.layer?.addSublayer(self.border)
         container.layer?.addSublayer(self.windowBrackets)
@@ -287,7 +299,7 @@ final class LockOnCandidateDecoration: CandidateDecoration {
         // 角丸の内側に収まるよう少し内側へ置く
         let frame = bounds.insetBy(dx: 5, dy: 5)
         self.windowBrackets.frame = frame
-        self.windowBrackets.path = LockOnHUD.bracketPath(size: frame.size, arm: 12)
+        self.windowBrackets.path = HUDStyle.bracketPath(size: frame.size, arm: 12)
         CATransaction.commit()
     }
 
@@ -308,18 +320,22 @@ final class LockOnCandidateDecoration: CandidateDecoration {
         self.selection.frame = target
         self.selectionFill.frame = CGRect(origin: .zero, size: target.size)
         self.selectionBrackets.frame = CGRect(origin: .zero, size: target.size)
-        self.selectionBrackets.path = LockOnHUD.bracketPath(size: target.size, arm: 7)
+        self.selectionBrackets.path = HUDStyle.bracketPath(size: target.size, arm: 7)
         self.selection.opacity = 1
         CATransaction.commit()
 
         var lockDelay: CFTimeInterval = 0
         if !self.selectionVisible {
+            guard self.showsBrackets else {
+                // 波紋は最初の行でもその場で広げる
+                return self.finishSelection(at: target, in: tableView, lockDelay: 0)
+            }
             // 初回は少し広い枠から吸い付く
             let approach = CABasicAnimation(keyPath: "transform.scale")
             approach.fromValue = 1.25
             approach.toValue = 1
             approach.duration = Self.moveDuration
-            approach.timingFunction = LockOnHUD.homing
+            approach.timingFunction = HUDStyle.homing
             self.selectionBrackets.add(approach, forKey: "approach")
             lockDelay = Self.moveDuration
         } else if previous.origin != target.origin {
@@ -327,36 +343,83 @@ final class LockOnCandidateDecoration: CandidateDecoration {
             move.fromValue = NSValue(point: CGPoint(x: previous.midX, y: previous.midY))
             move.toValue = NSValue(point: CGPoint(x: target.midX, y: target.midY))
             move.duration = Self.moveDuration
-            move.timingFunction = LockOnHUD.homing
+            move.timingFunction = HUDStyle.homing
             self.selection.add(move, forKey: "move")
             lockDelay = Self.moveDuration
         }
-        self.selectionVisible = true
-
-        // 着いた瞬間に白く点いてアクセントへ冷め、ブラケットが一度揺れて止まる
-        let now = CACurrentMediaTime()
-        let wobble = LockOnHUD.wobble(amount: 0.08, duration: 0.3)
-        wobble.beginTime = now + lockDelay
-        self.selectionBrackets.add(wobble, forKey: "wobble")
-        let flash = CABasicAnimation(keyPath: "backgroundColor")
-        flash.fromValue = LockOnHUD.flash.withAlphaComponent(0.45).cgColor
-        flash.toValue = Self.restingFill.cgColor
-        flash.duration = 0.28
-        flash.timingFunction = LockOnHUD.easeOut
-        flash.beginTime = now + lockDelay
-        self.selectionFill.add(flash, forKey: "flash")
-        let cool = LockOnHUD.cooling(keyPath: "strokeColor", duration: 0.28)
-        cool.beginTime = now + lockDelay
-        self.selectionBrackets.add(cool, forKey: "cool")
+        self.finishSelection(at: target, in: tableView, lockDelay: lockDelay)
     }
 
-    /// ウィンドウが出たときに四隅のブラケットが外側から吸い付き、枠が一度光る
+    private func finishSelection(at target: CGRect, in tableView: NSTableView, lockDelay: CFTimeInterval) {
+        self.selectionVisible = true
+
+        // 着いた瞬間に白く点いてアクセントへ冷め、ブラケットが一度揺れるか、行の縁から波紋が広がる
+        let now = CACurrentMediaTime()
+        if self.showsBrackets {
+            let wobble = HUDStyle.wobble(amount: 0.08, duration: 0.3)
+            wobble.beginTime = now + lockDelay
+            self.selectionBrackets.add(wobble, forKey: "wobble")
+            let cool = HUDStyle.cooling(keyPath: "strokeColor", duration: 0.28)
+            cool.beginTime = now + lockDelay
+            self.selectionBrackets.add(cool, forKey: "cool")
+        } else {
+            self.emitRowRipple(around: target, in: tableView, delay: lockDelay)
+        }
+        let flash = CABasicAnimation(keyPath: "backgroundColor")
+        flash.fromValue = HUDStyle.flash.withAlphaComponent(0.45).cgColor
+        flash.toValue = Self.restingFill.cgColor
+        flash.duration = 0.28
+        flash.timingFunction = HUDStyle.easeOut
+        flash.beginTime = now + lockDelay
+        self.selectionFill.add(flash, forKey: "flash")
+    }
+
+    /// 選択行の角丸の縁が外へ押し出されるように広がって消える
+    private func emitRowRipple(around rect: CGRect, in tableView: NSTableView, delay: CFTimeInterval) {
+        let ring = CAShapeLayer()
+        ring.frame = tableView.bounds
+        ring.fillColor = nil
+        ring.strokeColor = HUDStyle.accent.cgColor
+        ring.lineWidth = 1.5
+        ring.shadowColor = HUDStyle.accent.cgColor
+        ring.shadowOffset = .zero
+        ring.shadowRadius = 4
+        ring.shadowOpacity = 1
+        ring.opacity = 0
+        let from = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
+        let to = CGPath(roundedRect: rect.insetBy(dx: -10, dy: -7), cornerWidth: 12, cornerHeight: 12, transform: nil)
+        ring.path = to
+        tableView.layer?.insertSublayer(ring, above: self.selection)
+
+        let grow = CABasicAnimation(keyPath: "path")
+        grow.fromValue = from
+        grow.toValue = to
+        grow.timingFunction = HUDStyle.easeOut
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.8
+        fade.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [grow, fade]
+        group.duration = 0.42
+        group.beginTime = CACurrentMediaTime() + delay
+        ring.addEffectAnimation(group, removeAfter: true)
+    }
+
+    /// ウィンドウが出たときに枠が一度光り、ブラケットありなら四隅へ外側から吸い付く
     func playAppear(on layer: CALayer?) {
+        let flash = CAKeyframeAnimation(keyPath: "strokeColor")
+        flash.values = [HUDStyle.accent.withAlphaComponent(0.45).cgColor, HUDStyle.flash.cgColor, HUDStyle.accent.withAlphaComponent(0.45).cgColor]
+        flash.keyTimes = [0, 0.35, 1]
+        flash.duration = 0.5
+        self.border.add(flash, forKey: "flash")
+        guard self.showsBrackets else {
+            return
+        }
         let approach = CABasicAnimation(keyPath: "transform.scale")
         approach.fromValue = 1.12
         approach.toValue = 1
         approach.duration = 0.2
-        approach.timingFunction = LockOnHUD.homing
+        approach.timingFunction = HUDStyle.homing
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 0
         fade.toValue = 1
@@ -365,12 +428,6 @@ final class LockOnCandidateDecoration: CandidateDecoration {
         group.animations = [approach, fade]
         group.duration = 0.2
         self.windowBrackets.add(group, forKey: "appear")
-
-        let flash = CAKeyframeAnimation(keyPath: "strokeColor")
-        flash.values = [LockOnHUD.accent.withAlphaComponent(0.45).cgColor, LockOnHUD.flash.cgColor, LockOnHUD.accent.withAlphaComponent(0.45).cgColor]
-        flash.keyTimes = [0, 0.35, 1]
-        flash.duration = 0.5
-        self.border.add(flash, forKey: "flash")
     }
 }
 
