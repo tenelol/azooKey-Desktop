@@ -15,9 +15,10 @@ private enum ConverterServerXPC {
 @MainActor
 final class ConverterServerClient {
     private static let commandTimeout: TimeInterval = 1
-    /// Zenzai の推論は長い入力で1秒を超えることがある。キーイベントは再送されるため、
-    /// 短いと処理中のサーバーへ同じ変換を重ねて送り、再接続を繰り返して入力が止まる
-    private static let keyEventTimeout: TimeInterval = 30
+    /// Zenzai の推論は長い入力で1秒を超えることがある。セッションのコマンドが短い時間で
+    /// タイムアウトすると接続をリセットし、処理中のキーイベントの応答まで失って再送が重なり、
+    /// 再接続を繰り返して入力が止まる。サーバーが落ちた場合は接続の無効化ですぐに分かる
+    private static let sessionCommandTimeout: TimeInterval = 30
 
     private var connection: NSXPCConnection?
     private var sessionID: String?
@@ -119,7 +120,7 @@ final class ConverterServerClient {
         _ commandBuilder: @escaping (String) -> ConverterSessionCommand,
         completion: @escaping (ConverterServerResponse?) -> Void
     ) {
-        enqueue(commandBuilder, timeout: Self.commandTimeout, retriesOnFailure: false, completion: completion)
+        enqueue(commandBuilder, timeout: Self.sessionCommandTimeout, retriesOnFailure: false, completion: completion)
     }
 
     /// キーイベントはタイムアウトで捨てず、1件ずつ順番に Server へ送る。
@@ -128,7 +129,7 @@ final class ConverterServerClient {
         _ request: ConverterKeyEventRequest,
         completion: @escaping (ConverterServerResponse?) -> Void
     ) {
-        enqueue({ _ in .handleKeyEvent(request) }, timeout: Self.keyEventTimeout, retriesOnFailure: true, completion: completion)
+        enqueue({ _ in .handleKeyEvent(request) }, timeout: Self.sessionCommandTimeout, retriesOnFailure: true, completion: completion)
     }
 
     func sendIfSessionOpen(
@@ -139,7 +140,7 @@ final class ConverterServerClient {
             completion(nil)
             return
         }
-        enqueue(commandBuilder, timeout: Self.commandTimeout, retriesOnFailure: false, completion: completion)
+        enqueue(commandBuilder, timeout: Self.sessionCommandTimeout, retriesOnFailure: false, completion: completion)
     }
 
     private func enqueue(
