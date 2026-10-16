@@ -426,6 +426,23 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         return true
     }
 
+    /// 候補ウィンドウの選択行と入力中の文字が食い違ったときだけ、行番号を残す（入力内容は残さない）
+    private static func checkSelectionMatchesMarkedText(
+        candidates: [ConverterCandidatePresentation],
+        selectionIndex: Int?,
+        markedText: ConverterMarkedText
+    ) {
+        guard let selectionIndex, candidates.indices.contains(selectionIndex),
+              let focused = markedText.elements.first(where: { $0.focus == .focused })?.content,
+              candidates[selectionIndex].text != focused else {
+            return
+        }
+        let shownRow = candidates.firstIndex { $0.text == focused } ?? -1
+        EffectLog.candidate.notice(
+            "selection index \(selectionIndex, privacy: .public) does not match the marked text, which matches row \(shownRow, privacy: .public)"
+        )
+    }
+
     /// 入力が止まる原因を切り分けるため、遅かった打鍵だけ所要時間の内訳を残す
     /// （prepare: 入力先アプリへの同期問い合わせを含む送信前処理、roundtrip: 変換サーバーの待ち、
     /// apply: 結果の反映、effect: 演出）
@@ -617,6 +634,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
     private func refreshCandidateWindow(_ candidateWindow: ConverterCandidateWindow) {
         switch candidateWindow {
         case .selecting(let candidates, let selectionIndex):
+            Self.checkSelectionMatchesMarkedText(candidates: candidates, selectionIndex: selectionIndex, markedText: self.currentMarkedText())
             var rect: NSRect = .zero
             self.client().attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
             self.candidatesViewController.showCandidateIndex = true

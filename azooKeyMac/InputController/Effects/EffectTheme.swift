@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import os
 import QuartzCore
 
 /// 打鍵・確定・候補ウィンドウに重ねる演出の一式。入力メニューと設定画面から切り替える。
@@ -22,7 +23,14 @@ protocol CandidateDecoration: AnyObject {
     func uninstall()
     func layout(in bounds: CGRect)
     func moveSelection(toRow row: Int?)
+    /// 一覧のリサイズやスクロールが反映されたあとに、選択の装飾が行からずれていれば合わせ直す
+    func alignSelection(toRow row: Int)
     func playAppear(on layer: CALayer?)
+}
+
+/// 候補ウィンドウの位置ずれを調べるためのログ。入力内容は残さない
+enum EffectLog {
+    static let candidate = Logger(subsystem: "dev.ensan.inputmethod.azooKeyMac", category: "candidate")
 }
 
 @MainActor

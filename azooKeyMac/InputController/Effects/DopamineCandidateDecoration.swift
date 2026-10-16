@@ -96,6 +96,18 @@ final class DopamineCandidateDecoration: CandidateDecoration {
         CATransaction.commit()
     }
 
+    func alignSelection(toRow row: Int) {
+        guard self.selectionVisible,
+              let target = self.tableView?.effectRect(ofRow: row, inset: CGSize(width: 5, height: 2)),
+              abs(target.minY - self.selection.frame.minY) > 1 else {
+            return
+        }
+        EffectLog.candidate.notice(
+            "realigned row \(row, privacy: .public) from y=\(Int(self.selection.frame.minY), privacy: .public) to y=\(Int(target.minY), privacy: .public)"
+        )
+        self.moveSelection(toRow: row)
+    }
+
     func moveSelection(toRow row: Int?) {
         guard let row, let tableView = self.tableView, let target = tableView.effectRect(ofRow: row, inset: CGSize(width: 5, height: 2)) else {
             self.selection.opacity = 0
