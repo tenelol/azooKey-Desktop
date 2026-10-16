@@ -1,6 +1,7 @@
 import Cocoa
 import Core
 import InputMethodKit
+import os
 
 @objc(azooKeyMacInputController)
 class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // swiftlint:disable:this type_name
@@ -350,6 +351,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         enableSuggestion: Bool,
         optionDirectInputText: String? = nil
     ) -> Bool {
+        let handleStart = CACurrentMediaTime()
         let disposition = ConverterClientEventRouter.disposition(
             event: event,
             context: .init(
@@ -385,6 +387,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         self.pendingConverterServerActivation = nil
         self.pendingKeyEventCount += 1
         let activationGeneration = self.activationGeneration
+        let sentAt = CACurrentMediaTime()
+        let pendingAtSend = self.pendingKeyEventCount
         self.converterServerClient.sendKeyEvent(request) { [weak self] response in
             Task { @MainActor in
                 guard let self else {
@@ -403,13 +407,47 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                     // application へ後からイベントを戻せないため、ここでは漏らさない。
                     self.appendDebugMessage("Consumed delayed fallthrough event \(request.eventID)")
                 }
+                let applyStart = CACurrentMediaTime()
                 self.apply(response)
+                let effectStart = CACurrentMediaTime()
                 if Self.isEffectKeystroke(event), let caret = self.effectCaretRect() {
                     EffectThemes.current.keystroke(at: caret)
                 }
+                KeyEventTiming(
+                    id: request.eventID,
+                    pending: pendingAtSend,
+                    prepare: sentAt - handleStart,
+                    roundtrip: applyStart - sentAt,
+                    apply: effectStart - applyStart,
+                    effect: CACurrentMediaTime() - effectStart
+                ).reportIfSlow()
             }
         }
         return true
+    }
+
+    /// 入力が止まる原因を切り分けるため、遅かった打鍵だけ所要時間の内訳を残す
+    /// （prepare: 入力先アプリへの同期問い合わせを含む送信前処理、roundtrip: 変換サーバーの待ち、
+    /// apply: 結果の反映、effect: 演出）
+    private struct KeyEventTiming {
+        private static let logger = Logger(subsystem: "dev.ensan.inputmethod.azooKeyMac", category: "latency")
+
+        var id: UInt64
+        var pending: Int
+        var prepare: CFTimeInterval
+        var roundtrip: CFTimeInterval
+        var apply: CFTimeInterval
+        var effect: CFTimeInterval
+
+        func reportIfSlow() {
+            guard self.prepare + self.roundtrip + self.apply + self.effect > 0.15 else {
+                return
+            }
+            let ms = { (seconds: CFTimeInterval) in Int(seconds * 1000) }
+            Self.logger.notice(
+                "slow key event \(self.id, privacy: .public): prepare=\(ms(self.prepare), privacy: .public)ms roundtrip=\(ms(self.roundtrip), privacy: .public)ms apply=\(ms(self.apply), privacy: .public)ms effect=\(ms(self.effect), privacy: .public)ms pending=\(self.pending, privacy: .public)"
+            )
+        }
     }
 
     @MainActor
