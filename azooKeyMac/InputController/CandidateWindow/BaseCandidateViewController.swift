@@ -230,16 +230,7 @@ class BaseCandidateViewController: NSViewController {
         self.updateSelectionCallback(row, notifySelectionChange: notifySelectionChange)
         self.currentSelectedRow = row
         self.updateVisibleRows()
-        // リサイズ直後はレイアウトとスクロールが未反映で、1行上に描かれることがあるため確定させてから置く
-        self.view.layoutSubtreeIfNeeded()
         self.decoration?.moveSelection(toRow: row)
-        // それでもAppKitが次のrun loopで行を動かしたときに備え、描画後の位置で合わせ直す
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.currentSelectedRow == row else {
-                return
-            }
-            self.decoration?.alignSelection(toRow: row)
-        }
     }
 
     internal func updateSelectionCallback(_ row: Int, notifySelectionChange: Bool) {}

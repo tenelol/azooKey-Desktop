@@ -413,6 +413,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                 if Self.isEffectKeystroke(event), let caret = self.effectCaretRect() {
                     EffectThemes.current.keystroke(at: caret)
                 }
+                CATransaction.flush()
                 KeyEventTiming(
                     id: request.eventID,
                     pending: pendingAtSend,
@@ -505,6 +506,9 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         if applyingEffects, !committedText.isEmpty, let caret = self.effectCaretRect() {
             EffectThemes.current.commit(committedText, at: caret)
         }
+        // ConverterServer の応答はキーイベントの外で届き、暗黙のトランザクションが次の打鍵まで
+        // 画面に出ないことがある。候補ウィンドウの選択が1つ前のまま残るため、ここで確定させる
+        CATransaction.flush()
     }
 
     /// 文字を打った打鍵だけを演出の対象にする（Enter・Backspace・矢印キー・ショートカットは除く）

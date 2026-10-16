@@ -303,18 +303,6 @@ final class HUDCandidateDecoration: CandidateDecoration {
         CATransaction.commit()
     }
 
-    func alignSelection(toRow row: Int) {
-        guard self.selectionVisible,
-              let target = self.tableView?.effectRect(ofRow: row, inset: CGSize(width: 5, height: 2)),
-              abs(target.minY - self.selection.frame.minY) > 1 else {
-            return
-        }
-        EffectLog.candidate.notice(
-            "realigned row \(row, privacy: .public) from y=\(Int(self.selection.frame.minY), privacy: .public) to y=\(Int(target.minY), privacy: .public)"
-        )
-        self.moveSelection(toRow: row)
-    }
-
     func moveSelection(toRow row: Int?) {
         guard let row, let tableView = self.tableView, let target = tableView.effectRect(ofRow: row, inset: CGSize(width: 5, height: 2)) else {
             self.selection.opacity = 0
@@ -444,24 +432,12 @@ final class HUDCandidateDecoration: CandidateDecoration {
 }
 
 extension NSTableView {
-    /// 行の矩形を装飾レイヤーの座標で返す。実際に描かれている行ビューのレイヤーから変換し、
-    /// 取れないときだけ行番号から計算した矩形を使う
+    /// 行の矩形を装飾レイヤーの座標で返す。clip view 側で座標系が反転済みのため、そのまま使える
     func effectRect(ofRow row: Int, inset: CGSize) -> CGRect? {
         guard row >= 0, row < self.numberOfRows else {
             return nil
         }
-        var rect = self.rect(ofRow: row)
-        self.layoutSubtreeIfNeeded()
-        if let tableLayer = self.layer, let rowLayer = self.rowView(atRow: row, makeIfNecessary: false)?.layer {
-            let drawn = tableLayer.convert(rowLayer.bounds, from: rowLayer)
-            if abs(drawn.minY - rect.minY) > 1 {
-                EffectLog.candidate.notice(
-                    "row \(row, privacy: .public) is drawn at y=\(Int(drawn.minY), privacy: .public) but computed at y=\(Int(rect.minY), privacy: .public)"
-                )
-            }
-            rect = drawn
-        }
-        return rect.insetBy(dx: inset.width, dy: inset.height)
+        return self.rect(ofRow: row).insetBy(dx: inset.width, dy: inset.height)
     }
 
     var effectScrollOffset: CGFloat {
