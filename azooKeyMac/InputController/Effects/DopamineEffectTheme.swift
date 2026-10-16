@@ -77,6 +77,8 @@ final class DopamineEffectTheme: EffectTheme {
     private var combo = 0
     private var resetWorkItem: DispatchWorkItem?
     private var recentCommittedText = ""
+    /// 30コンボ以上で出し続ける虹色の縁と紙吹雪の雨
+    private var feverLayers: [CALayer] = []
     private var imageCache: [String: CGImage] = [:]
 
     // MARK: - EffectTheme
@@ -88,11 +90,20 @@ final class DopamineEffectTheme: EffectTheme {
         self.combo += 1
         let rank = Self.rank(for: self.combo)
 
-        self.showComboLabel(rank: rank, near: local, in: root)
         self.emitSparks(at: local, colors: rank.colors, intensity: min(1 + CGFloat(self.combo) / 25, 3), in: root)
+        self.emitSpeedLines(at: local, color: rank.colors[0], in: root)
+        self.pulseRing(at: local, color: rank.colors[rank.colors.count - 1], in: root)
+        // コンボが伸びるほど絵文字が飛び出しやすくなる
+        if Double.random(in: 0..<1) < min(0.25 + Double(self.combo) / 100, 0.7) {
+            self.popEmoji(Self.keystrokeEmoji(for: rank).randomElement() ?? "✨", at: local, in: root)
+        }
+        if self.combo >= 30 {
+            self.startFever(in: root)
+        }
         if self.combo % 10 == 0 {
             self.showMilestone(rank: rank, in: root)
         }
+        self.showComboLabel(rank: rank, near: local, in: root)
         self.scheduleComboReset()
     }
 
@@ -108,7 +119,44 @@ final class DopamineEffectTheme: EffectTheme {
             self.recentCommittedText = ""
             self.playKeywordEffect(effect, near: local, in: root)
         } else if text.count >= 2 {
-            self.showFloatingText("NICE!", colors: [.effectHex(0x5CF2FF), .effectHex(0xFFFFFF)], at: local, in: root)
+            let praise = Self.praise(forLength: text.count)
+            self.emitStarShower(at: local, in: root)
+            if text.count >= 8 {
+                for index in 0..<3 {
+                    let point = CGPoint(x: local.x + CGFloat.random(in: -160...160), y: local.y + CGFloat.random(in: 40...160))
+                    self.fireworks(at: point, colors: praise.colors, delay: Double(index) * 0.12, in: root)
+                }
+            }
+            self.showFloatingText(praise.text, colors: praise.colors, fontSize: praise.fontSize, at: local, in: root)
+        }
+    }
+
+    /// 確定した長さで褒め言葉と大きさを上げる
+    private struct Praise {
+        var text: String
+        var fontSize: CGFloat
+        var colors: [NSColor]
+    }
+
+    private static func praise(forLength length: Int) -> Praise {
+        switch length {
+        case 12...:
+            Praise(text: "PERFECT!!!", fontSize: 46, colors: [.effectHex(0xFFE45C), .effectHex(0xFF4D6D), .effectHex(0xB45CFF), .effectHex(0x5CF2FF)])
+        case 8...:
+            Praise(text: "EXCELLENT!!", fontSize: 38, colors: [.effectHex(0xFF9F1C), .effectHex(0xFF4D6D), .effectHex(0xFFE45C)])
+        case 5...:
+            Praise(text: "GREAT!", fontSize: 30, colors: [.effectHex(0x5CFF8F), .effectHex(0xFFE45C)])
+        default:
+            Praise(text: "NICE!", fontSize: 24, colors: [.effectHex(0x5CF2FF), .effectHex(0xFFFFFF)])
+        }
+    }
+
+    private static func keystrokeEmoji(for rank: Rank) -> [String] {
+        switch rank.letter {
+        case "C": ["✨", "💫"]
+        case "B": ["⚡️", "✨", "💥"]
+        case "A": ["🔥", "💥", "⚡️", "😎"]
+        default: ["🔥", "🌈", "💎", "🚀", "👑", "🤯"]
         }
     }
 
@@ -224,6 +272,7 @@ final class DopamineEffectTheme: EffectTheme {
 
     private func resetCombo() {
         self.combo = 0
+        self.stopFever()
         for layer in [self.comboLayer, self.comboTimerLayer].compactMap({ $0 }) {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = layer.opacity
@@ -245,7 +294,14 @@ final class DopamineEffectTheme: EffectTheme {
         // 入力中の文字を隠さないよう、節目の見出しは画面右上に出す
         let center = CGPoint(x: root.bounds.maxX - 280, y: root.bounds.maxY - 120)
         // 後から追加したレイヤーほど手前に描かれるため、見出しは最後に重ねる
+        self.flashScreen(in: root)
         self.emitConfetti(at: center, colors: colors + rank.colors, in: root)
+        // 画面のあちこちで花火を連発する
+        let area = root.bounds.insetBy(dx: root.bounds.width * 0.12, dy: root.bounds.height * 0.15)
+        for index in 0..<(self.combo >= 50 ? 8 : 5) {
+            let point = CGPoint(x: CGFloat.random(in: area.minX...area.maxX), y: CGFloat.random(in: area.minY...area.maxY))
+            self.fireworks(at: point, colors: (colors + rank.colors).shuffled(), delay: Double(index) * 0.14, in: root)
+        }
         self.flashEdges(color: rank.colors[rank.colors.count / 2], in: root)
         self.showBanner(title, colors: colors, fontSize: 52, center: center, in: root)
     }
@@ -296,8 +352,8 @@ final class DopamineEffectTheme: EffectTheme {
         layer.addEffectAnimation(group, removeAfter: true)
     }
 
-    private func showFloatingText(_ text: String, colors: [NSColor], at point: CGPoint, in root: CALayer) {
-        guard let image = self.renderTitle(text, fontSize: 24, colors: colors, glow: colors[0]) else {
+    private func showFloatingText(_ text: String, colors: [NSColor], fontSize: CGFloat = 24, at point: CGPoint, in root: CALayer) {
+        guard let image = self.renderTitle(text, fontSize: fontSize, colors: colors, glow: colors[0]) else {
             return
         }
         let layer = CALayer()
@@ -319,6 +375,226 @@ final class DopamineEffectTheme: EffectTheme {
         group.duration = 0.8
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
         layer.addEffectAnimation(group, removeAfter: true)
+    }
+
+    /// 打鍵した位置から放射状に伸びる集中線
+    private func emitSpeedLines(at point: CGPoint, color: NSColor, in root: CALayer) {
+        let lines = CAShapeLayer()
+        lines.bounds = CGRect(x: -40, y: -40, width: 80, height: 80)
+        lines.position = point
+        let path = CGMutablePath()
+        let offset = CGFloat.random(in: 0..<(.pi / 5))
+        for index in 0..<10 {
+            let angle = offset + CGFloat(index) * .pi / 5
+            path.move(to: CGPoint(x: cos(angle) * 12, y: sin(angle) * 12))
+            path.addLine(to: CGPoint(x: cos(angle) * CGFloat.random(in: 26...38), y: sin(angle) * CGFloat.random(in: 26...38)))
+        }
+        lines.path = path
+        lines.strokeColor = NSColor.white.cgColor
+        lines.lineWidth = 2
+        lines.lineCap = .round
+        lines.shadowColor = color.cgColor
+        lines.shadowOffset = .zero
+        lines.shadowRadius = 4
+        lines.shadowOpacity = 1
+        lines.opacity = 0
+        root.addSublayer(lines)
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 0.5
+        scale.toValue = 1.7
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1
+        fade.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [scale, fade]
+        group.duration = 0.28
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        lines.addEffectAnimation(group, removeAfter: true)
+    }
+
+    private func pulseRing(at point: CGPoint, color: NSColor, in root: CALayer) {
+        let ring = CAShapeLayer()
+        ring.bounds = CGRect(x: 0, y: 0, width: 24, height: 24)
+        ring.position = point
+        ring.path = CGPath(ellipseIn: ring.bounds, transform: nil)
+        ring.fillColor = nil
+        ring.strokeColor = color.cgColor
+        ring.lineWidth = 2.5
+        ring.shadowColor = color.cgColor
+        ring.shadowOffset = .zero
+        ring.shadowRadius = 6
+        ring.shadowOpacity = 1
+        ring.opacity = 0
+        root.addSublayer(ring)
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 1
+        scale.toValue = 3.5
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.9
+        fade.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [scale, fade]
+        group.duration = 0.4
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ring.addEffectAnimation(group, removeAfter: true)
+    }
+
+    /// 絵文字を1つ、回転させながら弧を描いて飛ばす
+    private func popEmoji(_ emoji: String, at point: CGPoint, in root: CALayer) {
+        guard let image = self.emojiImage(emoji) else {
+            return
+        }
+        let size = CGFloat.random(in: 28...44)
+        let layer = CALayer()
+        layer.contents = image
+        layer.contentsScale = self.backingScale
+        layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        layer.position = point
+        layer.opacity = 0
+        root.addSublayer(layer)
+        let end = CGPoint(x: point.x + CGFloat.random(in: -70...70), y: point.y + CGFloat.random(in: 70...140))
+        let control = CGPoint(x: (point.x + end.x) / 2 + CGFloat.random(in: -40...40), y: end.y + 40)
+        let path = CGMutablePath()
+        path.move(to: point)
+        path.addQuadCurve(to: end, control: control)
+        let move = CAKeyframeAnimation(keyPath: "position")
+        move.path = path
+        move.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.toValue = CGFloat.random(in: -1.2...1.2)
+        let scale = CAKeyframeAnimation(keyPath: "transform.scale")
+        scale.values = [0.3, 1.25, 1, 0.8]
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0, 1, 1, 0]
+        fade.keyTimes = [0, 0.1, 0.65, 1]
+        let group = CAAnimationGroup()
+        group.animations = [move, spin, scale, fade]
+        group.duration = 0.9
+        layer.addEffectAnimation(group, removeAfter: true)
+    }
+
+    /// 一点から全方向に弾けて重力で垂れる花火
+    private func fireworks(at point: CGPoint, colors: [NSColor], delay: TimeInterval, in root: CALayer) {
+        guard let spark = self.sparkImage(), let star = self.starImage() else {
+            return
+        }
+        let cells = colors.prefix(3).map { color in
+            let cell = self.makeCell(image: Bool.random() ? spark : star, color: color, birthRate: 380, velocity: 230, lifetime: 1.2, scale: 0.4, yAcceleration: -150, spin: 2)
+            cell.velocityRange = 40
+            return cell
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak root] in
+            MainActor.assumeIsolated {
+                guard let self, let root else {
+                    return
+                }
+                self.burst(cells: Array(cells), at: point, renderMode: .additive, emitDuration: 0.05, in: root)
+                self.pulseRing(at: point, color: colors.first ?? .white, in: root)
+            }
+        }
+    }
+
+    /// 確定した文字列から星を吹き上げる
+    private func emitStarShower(at point: CGPoint, in root: CALayer) {
+        guard let star = self.starImage() else {
+            return
+        }
+        let cells = [NSColor.effectHex(0xFFE45C), .effectHex(0xFFFFFF), .effectHex(0xFF9ECF)].map { color in
+            let cell = self.makeCell(image: star, color: color, birthRate: 90, velocity: 260, lifetime: 1.3, scale: 0.45, yAcceleration: -380, spin: 4)
+            cell.emissionLongitude = .pi / 2
+            cell.emissionRange = .pi / 3
+            return cell
+        }
+        self.burst(cells: cells, at: point, renderMode: .additive, emitDuration: 0.15, in: root)
+    }
+
+    /// 画面全体が一瞬白く光る
+    private func flashScreen(in root: CALayer) {
+        let flash = CALayer()
+        flash.frame = root.bounds
+        flash.backgroundColor = NSColor.white.withAlphaComponent(0.3).cgColor
+        flash.opacity = 0
+        root.insertSublayer(flash, at: 0)
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0, 1, 0]
+        fade.keyTimes = [0, 0.15, 1]
+        fade.duration = 0.35
+        flash.addEffectAnimation(fade, removeAfter: true)
+    }
+
+    /// フィーバー中は画面の縁に虹色の光を回し、上から紙吹雪を降らせ続ける
+    private func startFever(in root: CALayer) {
+        guard self.feverLayers.isEmpty, let confetti = self.confettiImage(), let star = self.starImage() else {
+            return
+        }
+        let bounds = root.bounds
+        let border = CALayer()
+        border.frame = bounds
+        let gradient = CAGradientLayer()
+        gradient.type = .conic
+        gradient.colors = [0xFF4D6D, 0xFFE45C, 0x5CFF8F, 0x5CF2FF, 0xB45CFF, 0xFF4D6D].map { NSColor.effectHex($0).cgColor }
+        gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
+        gradient.endPoint = CGPoint(x: 0.5, y: 0)
+        let side = hypot(bounds.width, bounds.height)
+        gradient.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        gradient.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        let mask = CAShapeLayer()
+        mask.frame = bounds
+        mask.path = CGPath(rect: bounds.insetBy(dx: 6, dy: 6), transform: nil)
+        mask.fillColor = nil
+        mask.strokeColor = NSColor.white.cgColor
+        mask.lineWidth = 12
+        mask.shadowColor = NSColor.white.cgColor
+        mask.shadowOffset = .zero
+        mask.shadowRadius = 10
+        mask.shadowOpacity = 1
+        border.mask = mask
+        border.addSublayer(gradient)
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = -2 * CGFloat.pi
+        spin.duration = 2
+        spin.repeatCount = .infinity
+        gradient.add(spin, forKey: "spin")
+        let breathe = CABasicAnimation(keyPath: "opacity")
+        breathe.fromValue = 0.55
+        breathe.toValue = 1
+        breathe.duration = 0.45
+        breathe.autoreverses = true
+        breathe.repeatCount = .infinity
+        border.add(breathe, forKey: "breathe")
+        root.insertSublayer(border, at: 0)
+
+        let rain = CAEmitterLayer()
+        rain.frame = bounds
+        rain.emitterShape = .line
+        rain.emitterPosition = CGPoint(x: bounds.midX, y: bounds.maxY + 10)
+        rain.emitterSize = CGSize(width: bounds.width, height: 1)
+        rain.beginTime = CACurrentMediaTime()
+        rain.emitterCells = [0xFF4D6D, 0xFFE45C, 0x5CFF8F, 0x5CF2FF, 0xB45CFF].map { hex in
+            let cell = self.makeCell(image: Bool.random() ? confetti : star, color: .effectHex(UInt32(hex)), birthRate: 14, velocity: 140, lifetime: 7, scale: 0.55, yAcceleration: -60, spin: 4)
+            cell.emissionLongitude = -.pi / 2
+            cell.emissionRange = .pi / 6
+            cell.alphaSpeed = -0.1
+            cell.scaleSpeed = 0
+            return cell
+        }
+        root.insertSublayer(rain, above: border)
+        self.feverLayers = [border, rain]
+        self.showBanner("FEVER!!", colors: [.effectHex(0xFF4D6D), .effectHex(0xFFE45C), .effectHex(0x5CF2FF)], fontSize: 72, center: CGPoint(x: bounds.midX, y: bounds.maxY - 160), in: root)
+    }
+
+    private func stopFever() {
+        for layer in self.feverLayers {
+            (layer as? CAEmitterLayer)?.birthRate = 0
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = layer.presentation()?.opacity ?? layer.opacity
+            fade.toValue = 0
+            fade.duration = 0.6
+            layer.opacity = 0
+            layer.addEffectAnimation(fade, removeAfter: true)
+        }
+        self.feverLayers = []
     }
 
     private func emitSparks(at point: CGPoint, colors: [NSColor], intensity: CGFloat, in root: CALayer) {

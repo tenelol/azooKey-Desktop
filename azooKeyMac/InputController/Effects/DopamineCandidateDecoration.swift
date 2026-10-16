@@ -151,8 +151,79 @@ final class DopamineCandidateDecoration: CandidateDecoration {
         sheenOpacity.duration = 0.45
         self.sheen.add(sweep, forKey: "sweep")
         self.sheen.add(sheenOpacity, forKey: "sheenOpacity")
+        self.emitSparkles(around: target, in: tableView)
         self.selectionVisible = true
     }
+
+    /// 選択が着いた行の縁から星を弾けさせる
+    private func emitSparkles(around rect: CGRect, in tableView: NSTableView) {
+        guard let star = Self.sparkleImage else {
+            return
+        }
+        let emitter = CAEmitterLayer()
+        emitter.frame = tableView.bounds
+        emitter.emitterShape = .rectangle
+        emitter.emitterMode = .outline
+        emitter.emitterPosition = CGPoint(x: rect.midX, y: rect.midY)
+        emitter.emitterSize = rect.size
+        emitter.renderMode = .additive
+        emitter.beginTime = CACurrentMediaTime()
+        emitter.emitterCells = Self.selectionColors.map { color in
+            let cell = CAEmitterCell()
+            cell.contents = star
+            cell.color = color.cgColor
+            cell.birthRate = 160
+            cell.lifetime = 0.6
+            cell.velocity = 50
+            cell.velocityRange = 30
+            cell.emissionRange = .pi * 2
+            cell.scale = 0.35
+            cell.scaleRange = 0.2
+            cell.scaleSpeed = -0.4
+            cell.alphaSpeed = -1.6
+            cell.spin = 3
+            return cell
+        }
+        tableView.layer?.addSublayer(emitter)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            emitter.birthRate = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            emitter.removeFromSuperlayer()
+        }
+    }
+
+    /// 4方向に尖ったきらめき（白で描いて粒子ごとに色を付ける）
+    private static let sparkleImage: CGImage? = {
+        let size = 32
+        guard let context = CGContext(
+            data: nil,
+            width: size,
+            height: size,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        let path = CGMutablePath()
+        for index in 0..<8 {
+            let angle = CGFloat(index) * .pi / 4
+            let radius: CGFloat = index.isMultiple(of: 2) ? 16 : 4
+            let point = CGPoint(x: 16 + cos(angle) * radius, y: 16 + sin(angle) * radius)
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        path.closeSubpath()
+        context.addPath(path)
+        context.setFillColor(NSColor.white.cgColor)
+        context.fillPath()
+        return context.makeImage()
+    }()
 
     /// ウィンドウが表示されたときに下から浮き上がらせる
     func playAppear(on layer: CALayer?) {
