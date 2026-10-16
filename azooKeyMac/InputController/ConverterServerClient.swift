@@ -15,6 +15,9 @@ private enum ConverterServerXPC {
 @MainActor
 final class ConverterServerClient {
     private static let commandTimeout: TimeInterval = 1
+    /// Zenzai の推論は長い入力で1秒を超えることがある。キーイベントは再送されるため、
+    /// 短いと処理中のサーバーへ同じ変換を重ねて送り、再接続を繰り返して入力が止まる
+    private static let keyEventTimeout: TimeInterval = 30
 
     private var connection: NSXPCConnection?
     private var sessionID: String?
@@ -116,7 +119,7 @@ final class ConverterServerClient {
         _ commandBuilder: @escaping (String) -> ConverterSessionCommand,
         completion: @escaping (ConverterServerResponse?) -> Void
     ) {
-        enqueue(commandBuilder, retriesOnFailure: false, completion: completion)
+        enqueue(commandBuilder, timeout: Self.commandTimeout, retriesOnFailure: false, completion: completion)
     }
 
     /// キーイベントはタイムアウトで捨てず、1件ずつ順番に Server へ送る。
@@ -125,7 +128,7 @@ final class ConverterServerClient {
         _ request: ConverterKeyEventRequest,
         completion: @escaping (ConverterServerResponse?) -> Void
     ) {
-        enqueue({ _ in .handleKeyEvent(request) }, retriesOnFailure: true, completion: completion)
+        enqueue({ _ in .handleKeyEvent(request) }, timeout: Self.keyEventTimeout, retriesOnFailure: true, completion: completion)
     }
 
     func sendIfSessionOpen(
@@ -136,17 +139,18 @@ final class ConverterServerClient {
             completion(nil)
             return
         }
-        enqueue(commandBuilder, retriesOnFailure: false, completion: completion)
+        enqueue(commandBuilder, timeout: Self.commandTimeout, retriesOnFailure: false, completion: completion)
     }
 
     private func enqueue(
         _ commandBuilder: @escaping (String) -> ConverterSessionCommand,
+        timeout: TimeInterval,
         retriesOnFailure: Bool,
         completion: @escaping (ConverterServerResponse?) -> Void
     ) {
         var proposedSessionID: String?
         commandQueue.enqueue(
-            timeout: Self.commandTimeout,
+            timeout: timeout,
             timeoutOutcome: retriesOnFailure ? .retry : .finish(nil),
             onTimeout: { [weak self] in
                 self?.handleCommandTimeout()
