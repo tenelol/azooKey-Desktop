@@ -1,5 +1,8 @@
 # azooKey on macOS
 
+> [!NOTE]
+> このブランチ（`dpgk-IME`）は演出テーマを足した非公式フォークです。使い方とインストールは [DPGK-IME.md](DPGK-IME.md) を見てください。以下は本家の README です。
+
 [azooKey](https://github.com/ensan-hcl/azooKey)のmacOS版です。高精度なニューラルかな漢字変換エンジン「Zenzai」を導入した、オープンソースの日本語入力システムです。
 
 **現在アルファ版のため、動作は一切保証できません**。
