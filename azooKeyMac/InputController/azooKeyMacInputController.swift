@@ -385,6 +385,18 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
             activation: self.pendingConverterServerActivation
         )
         self.pendingConverterServerActivation = nil
+        // Ghostty などは keyDown の処理中にマーク文字が付かなかったキーを、そのまま端末へ送る。
+        // サーバーの応答は非同期なので、入力を始める1文字だけ先に仮のマーク文字を置き、
+        // 最初の英字が確定文字として漏れないようにする（応答の refreshMarkedText で置き換わる）
+        if self.inputState == .none, self.inputLanguage == .japanese, self.pendingKeyEventCount == 0,
+           self.currentMarkedText().elements.allSatisfy({ $0.content.isEmpty }),
+           Self.isTypingKeystroke(event), let text = event.characters {
+            self.client()?.setMarkedText(
+                text,
+                selectionRange: NSRange(location: text.utf16.count, length: 0),
+                replacementRange: NSRange(location: NSNotFound, length: 0)
+            )
+        }
         self.pendingKeyEventCount += 1
         let activationGeneration = self.activationGeneration
         let sentAt = CACurrentMediaTime()
@@ -400,6 +412,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                 }
                 guard let response else {
                     self.appendDebugMessage("ConverterServer dropped key event \(request.eventID)")
+                    // 仮のマーク文字を残さない
+                    self.refreshMarkedText()
                     return
                 }
                 if !response.handled {
@@ -410,7 +424,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                 let applyStart = CACurrentMediaTime()
                 self.apply(response)
                 let effectStart = CACurrentMediaTime()
-                if Self.isEffectKeystroke(event), let caret = self.effectCaretRect() {
+                if Self.isTypingKeystroke(event), let caret = self.effectCaretRect() {
                     EffectThemes.current.keystroke(at: caret)
                 }
                 CATransaction.flush()
@@ -511,8 +525,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         CATransaction.flush()
     }
 
-    /// 文字を打った打鍵だけを演出の対象にする（Enter・Backspace・矢印キー・ショートカットは除く）
-    private static func isEffectKeystroke(_ event: KeyEventCore) -> Bool {
+    /// 文字を打った打鍵か（Enter・Backspace・矢印キー・ショートカットは除く）
+    private static func isTypingKeystroke(_ event: KeyEventCore) -> Bool {
         guard event.modifierFlags.isDisjoint(with: [.command, .control]),
               let scalar = event.characters?.unicodeScalars.first else {
             return false
