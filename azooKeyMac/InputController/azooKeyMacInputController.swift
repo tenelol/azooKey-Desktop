@@ -10,6 +10,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
     private(set) var inputState: InputState = .none
     private var inputLanguage: InputLanguage = .japanese
     private var pendingKeyEventCount = 0
+    /// 入力中の文字の先頭位置。`markedTextOriginRect()` を通して使う
+    private var cachedMarkedTextRect: NSRect?
     private var nextKeyEventID: UInt64 = 0
     private var activationGeneration: UInt64 = 0
     private var pendingConverterServerActivation: ConverterSessionActivation?
@@ -148,6 +150,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
         self.activationGeneration &+= 1
+        self.cachedMarkedTextRect = nil
         self.updateLiveConversionToggleMenuItem(newValue: self.liveConversionEnabled)
         self.updateEffectThemeMenuItems()
         self.updateTransformSelectedTextMenuItemEnabledState()
@@ -177,6 +180,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
     @MainActor
     override func deactivateServer(_ sender: Any!) {
         self.activationGeneration &+= 1
+        self.cachedMarkedTextRect = nil
         self.pendingConverterServerActivation = nil
         self.converterServerClient.sendIfSessionOpen({ _ in .lifecycle(.deactivate) }, completion: { _ in })
         self.currentConverterView = nil
@@ -502,6 +506,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         }
         self.inputState = response.inputState.inputState
         self.currentConverterView = response.snapshot
+        // 確定した文字列は確定前の入力中の文字と同じ位置から始まる
+        let committedOrigin = self.cachedMarkedTextRect
         if applyingEffects, let client = self.client() {
             for effect in response.effects {
                 self.apply(effect, client: client)
@@ -517,7 +523,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
                 text += inserted
             }
         }
-        if applyingEffects, !committedText.isEmpty, let caret = self.effectCaretRect() {
+        if applyingEffects, !committedText.isEmpty, let caret = self.effectCaretRect(at: committedOrigin) {
             EffectThemes.current.commit(committedText, at: caret)
         }
         // ConverterServer の応答はキーイベントの外で届き、暗黙のトランザクションが次の打鍵まで
@@ -535,24 +541,33 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         return scalar.value >= 0x20 && scalar.value != 0x7F && !(0xF700...0xF8FF).contains(scalar.value)
     }
 
-    /// 演出の基準にするキャレット行の矩形（スクリーン座標）。取れないクライアントではマウス位置を使う
+    /// 演出の基準にする行の矩形（スクリーン座標）。入力中の文字の先頭を使い、取れないクライアントではマウス位置を使う
     @MainActor
-    private func effectCaretRect() -> CGRect? {
-        guard EffectThemes.isActive, let client = self.client() else {
+    private func effectCaretRect(at origin: NSRect? = nil) -> CGRect? {
+        guard EffectThemes.isActive else {
             return nil
         }
-        let selection = self.currentMarkedText().selectionRange.location
-        // 末尾のキャレット位置を返さないクライアントがあるため先頭位置にも退避する
-        let indices = selection > 0 && selection != NSNotFound ? [selection, 0] : [0]
-        for index in indices {
-            var rect: NSRect = .zero
-            client.attributes(forCharacterIndex: index, lineHeightRectangle: &rect)
-            if rect != .zero {
-                return rect
-            }
+        let rect = origin ?? self.markedTextOriginRect()
+        if rect != .zero {
+            return rect
         }
         let mouse = NSEvent.mouseLocation
         return CGRect(x: mouse.x, y: mouse.y - 9, width: 0, height: 18)
+    }
+
+    /// 入力中の文字の先頭位置（スクリーン座標）。アプリへの問い合わせは同期で、応答の遅いアプリでは
+    /// 1回で最大3秒止まるため、入力を始めたときに1回だけ聞いて確定まで使い回す
+    private func markedTextOriginRect() -> NSRect {
+        if let cached = self.cachedMarkedTextRect {
+            return cached
+        }
+        var rect: NSRect = .zero
+        self.client()?.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
+        // 入力中でないときの位置は次の入力で変わるため覚えない
+        if self.currentMarkedText().elements.contains(where: { !$0.content.isEmpty }) {
+            self.cachedMarkedTextRect = rect
+        }
+        return rect
     }
 
     @MainActor
@@ -561,6 +576,8 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         switch effect {
         case .insertText(let text):
             client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            // 一部だけ確定すると入力中の文字の先頭がずれる
+            self.cachedMarkedTextRect = nil
         case .switchInputLanguage(let language):
             self.switchInputLanguage(language, client: client)
         case .requestPredictiveSuggestion:
@@ -653,8 +670,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         switch candidateWindow {
         case .selecting(let candidates, let selectionIndex):
             Self.checkSelectionMatchesMarkedText(candidates: candidates, selectionIndex: selectionIndex, markedText: self.currentMarkedText())
-            var rect: NSRect = .zero
-            self.client().attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
+            let rect = self.markedTextOriginRect()
             self.candidatesViewController.showCandidateIndex = true
             self.candidatesViewController.updateCandidatePresentations(
                 candidates,
@@ -663,8 +679,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
             )
             self.candidatesWindow.orderFront(nil)
         case .composing(let candidates, let selectionIndex):
-            var rect: NSRect = .zero
-            self.client().attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
+            let rect = self.markedTextOriginRect()
             self.candidatesViewController.showCandidateIndex = false
             self.candidatesViewController.updateCandidatePresentations(
                 candidates,
@@ -756,8 +771,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         self.lastPredictionCandidates = predictions.map(\.displayText)
         self.lastPredictionUpdateTime = Date().timeIntervalSince1970
 
-        var rect: NSRect = .zero
-        self.client().attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
+        let rect = self.markedTextOriginRect()
         self.predictionViewController.updateCandidatePresentations(
             candidates,
             selectionIndex: nil,
@@ -799,8 +813,7 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         guard !candidates.isEmpty else {
             return
         }
-        var rect: NSRect = .zero
-        self.client().attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
+        let rect = self.markedTextOriginRect()
         self.predictionViewController.updateCandidatePresentations(
             candidates,
             selectionIndex: nil,
@@ -859,6 +872,10 @@ class azooKeyMacInputController: IMKInputController, NSMenuItemValidation { // s
         ) as? [NSAttributedString.Key: Any]
         let text = NSMutableAttributedString(string: "")
         let currentMarkedText = self.currentMarkedText()
+        // 入力中の文字がなくなったら、次の入力は別の位置から始まる
+        if !currentMarkedText.elements.contains(where: { !$0.content.isEmpty }) {
+            self.cachedMarkedTextRect = nil
+        }
         for part in currentMarkedText.elements where !part.content.isEmpty {
             let attributes: [NSAttributedString.Key: Any]? = switch part.focus {
             case .focused: highlight
